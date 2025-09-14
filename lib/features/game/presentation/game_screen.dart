@@ -37,6 +37,9 @@ class _GameScreenState extends State<GameScreen> {
   late ConfettiController _confettiController;
   List<Map<String, dynamic>> partidas = [];
 
+  // Estado del juego
+  bool _partidaIniciada = false;
+
   // Calentamiento
   bool _isWarmingUp = false;
   int _warmupRemaining = 0;
@@ -45,6 +48,12 @@ class _GameScreenState extends State<GameScreen> {
   @override
   void initState() {
     super.initState();
+    Future.delayed(Duration.zero, () async {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    });
     _confettiController = ConfettiController(
       duration: const Duration(seconds: 2),
     );
@@ -62,11 +71,6 @@ class _GameScreenState extends State<GameScreen> {
       const Duration(seconds: 1),
       (_) => _onWarmupTick(),
     );
-    // Forzar landscape
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
   }
 
   void _onWarmupTick() {
@@ -124,14 +128,12 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
-  // Agregar función para guardar los últimos jugadores seleccionados
   Future<void> _saveLastPlayers() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('last_player1', player1 ?? '');
     await prefs.setString('last_player2', player2 ?? '');
   }
 
-  // En initState, cargar los últimos jugadores si existen
   Future<void> _loadLastPlayers() async {
     final prefs = await SharedPreferences.getInstance();
     final last1 = prefs.getString('last_player1');
@@ -150,15 +152,14 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   void dispose() {
-    _confettiController.dispose();
-    _warmupTimer?.cancel();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-    super.dispose();
+    ]).then((_) {
+      _confettiController.dispose();
+      _warmupTimer?.cancel();
+      super.dispose();
+    });
   }
 
   void _incrementScore(bool isPlayer1) {
@@ -185,11 +186,9 @@ class _GameScreenState extends State<GameScreen> {
       bool modoExtendido =
           score1 >= puntosParaMatchPoint && score2 >= puntosParaMatchPoint;
       if (modoExtendido) {
-        // En modo extendido, retrocedemos un saque
         saqueActual = saqueActual == player1 ? player2 : player1;
         saquesRestantes = 1;
       } else {
-        // En modo normal, recalculamos los saques
         int totalPuntos = score1 + score2;
         int cadaCuantos = 2;
         if (totalPuntos == 0) {
@@ -213,12 +212,10 @@ class _GameScreenState extends State<GameScreen> {
   void _handleSaque() {
     bool modoExtendido =
         score1 >= puntosParaMatchPoint && score2 >= puntosParaMatchPoint;
-    // En modo extendido (después de 10-10), el saque cambia en cada punto
     if (modoExtendido) {
       saqueActual = saqueActual == player1 ? player2 : player1;
       saquesRestantes = 1;
     } else {
-      // Modo normal: cambio de saque cada 2 puntos
       int cadaCuantos = 2;
       if (score1 + score2 == 0) {
         saquesRestantes = cadaCuantos;
@@ -317,6 +314,7 @@ class _GameScreenState extends State<GameScreen> {
       saquesRestantes = 2;
       showMatchPoint = false;
       ultimoMatchPointMostrado = -1;
+      _partidaIniciada = false;
     });
   }
 
@@ -777,10 +775,16 @@ class _GameScreenState extends State<GameScreen> {
               );
               if (selected != null &&
                   (selected == player1 || selected == player2)) {
+                // Activar orientación landscape al iniciar la partida
+                await SystemChrome.setPreferredOrientations([
+                  DeviceOrientation.landscapeLeft,
+                  DeviceOrientation.landscapeRight,
+                ]);
                 setState(() {
                   saqueActual = selected;
                   saqueInicial = selected;
                   saquesRestantes = 2;
+                  _partidaIniciada = true;
                 });
               }
             },
