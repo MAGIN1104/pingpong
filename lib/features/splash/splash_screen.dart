@@ -3,17 +3,15 @@ import 'dart:math' as math;
 
 class SplashScreen extends StatefulWidget {
   final Widget child;
-  
-  const SplashScreen({
-    super.key,
-    required this.child,
-  });
+
+  const SplashScreen({super.key, required this.child});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _bounceAnimation;
   late Animation<double> _rotationAnimation;
@@ -30,47 +28,45 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     // Animación de rebote usando curva personalizada
     _bounceAnimation = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween(begin: 0.0, end: -100.0)
-            .chain(CurveTween(curve: Curves.easeOut)),
+        tween: Tween(
+          begin: 0.0,
+          end: -100.0,
+        ).chain(CurveTween(curve: Curves.easeOut)),
         weight: 1,
       ),
       TweenSequenceItem(
-        tween: Tween(begin: -100.0, end: 0.0)
-            .chain(CurveTween(curve: Curves.bounceOut)),
+        tween: Tween(
+          begin: -100.0,
+          end: 0.0,
+        ).chain(CurveTween(curve: Curves.bounceOut)),
         weight: 1,
       ),
-    ]).animate(CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.0, 0.6),
-    ));
+    ]).animate(
+      CurvedAnimation(parent: _controller, curve: const Interval(0.0, 0.6)),
+    );
 
     // Animación de rotación
     _rotationAnimation = Tween<double>(
       begin: 0,
       end: 4 * math.pi, // 2 rotaciones completas
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.0, 0.6),
-    ));
+    ).animate(
+      CurvedAnimation(parent: _controller, curve: const Interval(0.0, 0.6)),
+    );
 
     // Animación de escala para el fade out
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: 20.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.6, 1.0, curve: Curves.easeInExpo),
-    ));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 20.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.6, 1.0, curve: Curves.easeInExpo),
+      ),
+    );
 
     _controller.forward().then((_) {
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) => widget.child,
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(
-              opacity: animation,
-              child: child,
-            );
+            return FadeTransition(opacity: animation, child: child);
           },
           transitionDuration: const Duration(milliseconds: 500),
         ),

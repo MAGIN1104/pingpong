@@ -32,9 +32,7 @@ class PingPongApp extends StatelessWidget {
         ),
         scaffoldBackgroundColor: const Color(0xFFF8F9FA), // Fondo muy claro
       ),
-      home: const SplashScreen(
-        child: SetupScreen(),
-      ),
+      home: const SplashScreen(child: SetupScreen()),
     );
   }
 }
