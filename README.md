@@ -104,8 +104,10 @@ git push origin feature/nueva-caracteristica
 - Agregar tests para nueva funcionalidad
 
 ## 📱 Capturas de Pantalla
+<img width="320" height="714" alt="Screenshot_1757819269" src="https://github.com/user-attachments/assets/177608c8-58f9-42d0-8575-82205f4a3b23" />
+<img width="714" height="320" alt="Screenshot_1757819148" src="https://github.com/user-attachments/assets/ddc6cb74-7be2-4602-9c08-1ebee8316c78" />
+<img width="714" height="320" alt="Screenshot_1757819244" src="https://github.com/user-attachments/assets/c243fd61-b4a4-44f9-bc7f-32e48055bad7" />
 
-[Aquí irían las capturas de pantalla de la aplicación]
 
 ## 🧪 Tests
 
