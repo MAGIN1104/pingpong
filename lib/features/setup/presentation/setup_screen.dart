@@ -30,7 +30,6 @@ class _SetupScreenState extends State<SetupScreen> {
 
   @override
   void dispose() {
-    // Restaurar orientación por defecto solo al salir de SetupScreen
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -45,7 +44,6 @@ class _SetupScreenState extends State<SetupScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Forzar orientación vertical cada vez que se entra a SetupScreen
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -87,17 +85,29 @@ class _SetupScreenState extends State<SetupScreen> {
     _saveParticipantes();
   }
 
-  void _startQuickGame() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder:
-            (_) => GameScreen(
-              participantes: List<String>.from(participantes),
-              modalidad: modalidad,
-            ),
-      ),
-    );
+  void _startQuickGame() async {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder:
+              (_) => GameScreen(
+                participantes: List<String>.from(participantes),
+                modalidad: modalidad,
+              ),
+        ),
+      ).then((_) {
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ]);
+      });
+    }
   }
 
   @override
