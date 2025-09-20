@@ -29,7 +29,7 @@ class PingPongApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Ping Pong FIE',
+      title: 'Ping Pong',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

@@ -1,12 +1,14 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
-    namespace = "com.example.ping_pong_fie"
+    namespace = "com.bo.pingpong"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
@@ -20,21 +22,47 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.ping_pong_fie"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        applicationId = "com.bo.pingpong"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    // Inicialización de keystoreProperties con ruta explícita
+    val keystoreProperties: Properties? by lazy {
+        val rootDir = rootProject.projectDir
+        val keystoreFile = File(rootDir, "key.properties") // Ruta explícita desde la raíz
+        if (keystoreFile.exists()) {
+            val props = Properties()
+            props.load(FileInputStream(keystoreFile))
+            println("Propiedades cargadas exitosamente desde ${keystoreFile.absolutePath}: $props")
+            props
+        } else {
+            println("ADVERTENCIA: key.properties no encontrado en ${keystoreFile.absolutePath}")
+            null
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            val props = keystoreProperties ?: throw GradleException("keystoreProperties es null. Verifica key.properties en ${rootProject.projectDir}/android/key.properties")
+            keyAlias = props["keyAlias"] as String
+            keyPassword = props["keyPassword"] as String
+            storeFile = rootProject.file("${props["storeFile"] as String}") // Ruta explícita desde la raíz
+            storePassword = props["storePassword"] as String
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 
