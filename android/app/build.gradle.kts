@@ -29,34 +29,41 @@ android {
         versionName = flutter.versionName
     }
 
-    // Inicialización de keystoreProperties con ruta explícita
+    // Inicialización de keystoreProperties con ruta flexible
     val keystoreProperties: Properties? by lazy {
         val rootDir = rootProject.projectDir
-        val keystoreFile = File(rootDir, "key.properties") // Ruta explícita desde la raíz
+        val keystoreFile = File(rootDir, if (File(rootDir, "android/key.properties").exists()) "android/key.properties" else "key.properties")
         if (keystoreFile.exists()) {
             val props = Properties()
             props.load(FileInputStream(keystoreFile))
             println("Propiedades cargadas exitosamente desde ${keystoreFile.absolutePath}: $props")
             props
         } else {
-            println("ADVERTENCIA: key.properties no encontrado en ${keystoreFile.absolutePath}")
+            println("ADVERTENCIA: key.properties no encontrado en ${keystoreFile.absolutePath}. Usando firma de depuración.")
             null
         }
     }
 
     signingConfigs {
-        create("release") {
-            val props = keystoreProperties ?: throw GradleException("keystoreProperties es null. Verifica key.properties en ${rootProject.projectDir}/android/key.properties")
-            keyAlias = props["keyAlias"] as String
-            keyPassword = props["keyPassword"] as String
-            storeFile = rootProject.file("${props["storeFile"] as String}") // Ruta explícita desde la raíz
-            storePassword = props["storePassword"] as String
+        register("release") {
+            val props = keystoreProperties
+            if (props != null) {
+                keyAlias = props["keyAlias"] as String
+                keyPassword = props["keyPassword"] as String
+                val storeFilePath = if (File(rootDir, "android/key.properties").exists()) "android/${props["storeFile"] as String}" else props["storeFile"] as String
+                storeFile = rootProject.file(storeFilePath)
+                storePassword = props["storePassword"] as String
+                println("Firma de release configurada con ${storeFile!!.absolutePath}") // Uso seguro con !!
+            } else {
+                println("No se configuró firma de release. Usando firma de depuración.")
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            // Usa la configuración de release si existe, de lo contrario usa debug
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
