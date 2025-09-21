@@ -37,10 +37,6 @@ class _GameScreenState extends State<GameScreen> {
   late ConfettiController _confettiController;
   List<Map<String, dynamic>> partidas = [];
 
-  // Estado del juego
-  bool _partidaIniciada = false;
-
-  // Calentamiento
   bool _isWarmingUp = false;
   int _warmupRemaining = 0;
   Timer? _warmupTimer;
@@ -314,7 +310,6 @@ class _GameScreenState extends State<GameScreen> {
       saquesRestantes = 2;
       showMatchPoint = false;
       ultimoMatchPointMostrado = -1;
-      _partidaIniciada = false;
     });
   }
 
@@ -784,7 +779,6 @@ class _GameScreenState extends State<GameScreen> {
                   saqueActual = selected;
                   saqueInicial = selected;
                   saquesRestantes = 2;
-                  _partidaIniciada = true;
                 });
               }
             },
@@ -875,16 +869,16 @@ class _GameScreenState extends State<GameScreen> {
               tooltip: 'Ver resultados',
               child: const Icon(Icons.history),
             ),
-            const SizedBox(height: 16),
-            FloatingActionButton(
-              heroTag: 'finisher',
-              onPressed: () async {
-                final player = AudioPlayer();
-                await player.play(AssetSource('finisher.mp3'));
-              },
-              tooltip: 'Finisher',
-              child: const Icon(Icons.volume_up),
-            ),
+            // const SizedBox(height: 16),
+            // FloatingActionButton(
+            //   heroTag: 'finisher',
+            //   onPressed: () async {
+            //     final player = AudioPlayer();
+            //     await player.play(AssetSource('finisher.mp3'));
+            //   },
+            //   tooltip: 'Finisher',
+            //   child: const Icon(Icons.volume_up),
+            // ),
           ],
         ),
       ),

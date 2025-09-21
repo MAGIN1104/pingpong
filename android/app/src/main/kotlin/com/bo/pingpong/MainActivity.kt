@@ -1,4 +1,4 @@
-package com.example.ping_pong_fie
+package com.bo.pingpong
 
 import io.flutter.embedding.android.FlutterActivity
 

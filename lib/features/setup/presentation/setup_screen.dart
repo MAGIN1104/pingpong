@@ -193,7 +193,9 @@ class _SetupScreenState extends State<SetupScreen> {
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: colorScheme.surfaceVariant.withOpacity(0.15),
+                    color: colorScheme.surfaceContainerHighest.withOpacity(
+                      0.15,
+                    ),
                     borderRadius: BorderRadius.circular(18),
                   ),
                   child:
@@ -276,7 +278,8 @@ class _SetupScreenState extends State<SetupScreen> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                         filled: true,
-                        fillColor: colorScheme.surfaceVariant.withOpacity(0.08),
+                        fillColor: colorScheme.surfaceContainerHighest
+                            .withOpacity(0.08),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
                           vertical: 14,
