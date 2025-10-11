@@ -7,14 +7,23 @@ import 'dart:convert';
 import 'dart:math';
 import 'results_screen.dart';
 import 'dart:async';
+import '../../../core/utils/avatar_helper.dart';
+import '../../../core/services/haptic_service.dart';
+import '../../../core/services/sound_service.dart';
+import '../../../core/services/statistics_service.dart';
 
 class GameScreen extends StatefulWidget {
   final List<String> participantes;
   final int modalidad;
+  final bool isTournamentMode;
+  final String? tournamentMatchId;
+
   const GameScreen({
     super.key,
     required this.participantes,
     required this.modalidad,
+    this.isTournamentMode = false,
+    this.tournamentMatchId,
   });
 
   @override
@@ -28,6 +37,8 @@ class _GameScreenState extends State<GameScreen> {
   String? player2;
   String? saqueInicial;
   String? saqueActual;
+  String? player1AvatarId;
+  String? player2AvatarId;
   int saquesRestantes = 2;
   bool showMatchPoint = false;
   int ultimoMatchPointMostrado = -1;
@@ -41,9 +52,21 @@ class _GameScreenState extends State<GameScreen> {
   int _warmupRemaining = 0;
   Timer? _warmupTimer;
 
+  // Servicios
+  final _hapticService = HapticService();
+  final _soundService = SoundService();
+  final _statsService = StatisticsService();
+
+  Future<void> _initServices() async {
+    await _hapticService.init();
+    await _soundService.init();
+    await _statsService.init();
+  }
+
   @override
   void initState() {
     super.initState();
+    _initServices();
     Future.delayed(Duration.zero, () async {
       await SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeLeft,
@@ -56,8 +79,26 @@ class _GameScreenState extends State<GameScreen> {
     puntosParaGanar = widget.modalidad;
     puntosParaMatchPoint = widget.modalidad - 1;
     if (widget.participantes.length >= 2) {
+      // Validar que los jugadores no sean iguales
+      if (widget.participantes[0] == widget.participantes[1]) {
+        // Mostrar error y volver
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No se pueden tener jugadores con el mismo nombre'),
+              duration: Duration(seconds: 3),
+              backgroundColor: Colors.red,
+            ),
+          );
+          Navigator.of(context).pop();
+        });
+        return;
+      }
+
       player1 = widget.participantes[0];
       player2 = widget.participantes[1];
+      player1AvatarId = AvatarHelper.getDefaultAvatar(player1!).id;
+      player2AvatarId = AvatarHelper.getDefaultAvatar(player2!).id;
       saqueInicial = player1;
       saqueActual = player1;
     }
@@ -137,28 +178,36 @@ class _GameScreenState extends State<GameScreen> {
     if (last1 != null && widget.participantes.contains(last1)) {
       setState(() {
         player1 = last1;
+        player1AvatarId = AvatarHelper.getDefaultAvatar(last1).id;
       });
     }
     if (last2 != null && widget.participantes.contains(last2)) {
       setState(() {
         player2 = last2;
+        player2AvatarId = AvatarHelper.getDefaultAvatar(last2).id;
       });
     }
   }
 
   @override
   void dispose() {
+    _confettiController.dispose();
+    _warmupTimer?.cancel();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
-    ]).then((_) {
-      _confettiController.dispose();
-      _warmupTimer?.cancel();
-      super.dispose();
-    });
+    ]);
+    super.dispose();
   }
 
   void _incrementScore(bool isPlayer1) {
+    // No permitir incrementar durante el calentamiento
+    if (_isWarmingUp) return;
+
+    // Haptic feedback y sonido
+    _hapticService.light();
+    _soundService.playScoreUp();
+
     setState(() {
       if (isPlayer1) {
         score1++;
@@ -172,6 +221,13 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _decrementScore(bool isPlayer1) {
+    // No permitir decrementar durante el calentamiento
+    if (_isWarmingUp) return;
+
+    // Haptic feedback y sonido
+    _hapticService.medium();
+    _soundService.playScoreDown();
+
     setState(() {
       if (isPlayer1 && score1 > 0) {
         score1--;
@@ -281,22 +337,67 @@ class _GameScreenState extends State<GameScreen> {
         hayGanador = true;
       }
     } else {
-      // En modo normal, se gana al llegar exactamente a los puntos establecidos
-      if (score1 == puntosParaGanar || score2 == puntosParaGanar) {
+      // En modo normal, se gana al llegar a los puntos establecidos
+      // Solo uno puede tener >= puntosParaGanar cuando no están en modo extendido
+      if (score1 >= puntosParaGanar || score2 >= puntosParaGanar) {
         hayGanador = true;
       }
     }
 
     if (hayGanador) {
-      winnerName = score1 > score2 ? player1 : player2;
+      final winner = score1 > score2 ? player1 : player2;
+      final loser = score1 > score2 ? player2 : player1;
+
+      if (winner == null || loser == null) return;
+
+      winnerName = winner;
+
       _savePartida();
+
+      // Guardar estadísticas
+      _statsService.recordGame(
+        winnerName: winner,
+        loserName: loser,
+        winnerScore: score1 > score2 ? score1 : score2,
+        loserScore: score1 > score2 ? score2 : score1,
+        modality: puntosParaGanar,
+      );
+
+      // Haptic y sonido de victoria
+      _hapticService.victory();
+      _soundService.playWin();
+
       Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => _buildWinnerDialog(winnerName!),
-          );
+          // Si es modo torneo, mostrar diálogo y regresar al bracket automáticamente
+          if (widget.isTournamentMode) {
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => _buildTournamentWinnerDialog(winner, loser),
+            ).then((dialogResult) {
+              // Regresar al bracket con el resultado
+              if (mounted) {
+                print('🏆 Torneo: Cerrando partido. Ganador: $winner');
+                Navigator.of(context).pop({
+                  'matchId': widget.tournamentMatchId,
+                  'winner': winner,
+                  'score1': score1,
+                  'score2': score2,
+                });
+              }
+            });
+          } else {
+            // Modo normal - mostrar diálogo y resetear
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => _buildWinnerDialog(winnerName!),
+            ).then((_) {
+              // Reset automático después de cerrar el diálogo del ganador
+              _resetGame();
+            });
+          }
         }
       });
     }
@@ -322,6 +423,7 @@ class _GameScreenState extends State<GameScreen> {
     double nameFontSize = 18,
     double cardHeight = 400,
   }) {
+    final avatarId = isLeft ? player1AvatarId : player2AvatarId;
     final isSaque = saqueActual == player;
     final isWinner = (score == puntosParaGanar);
     return StatefulBuilder(
@@ -336,25 +438,31 @@ class _GameScreenState extends State<GameScreen> {
             final nameFont = isSmall ? 16.0 : nameFontSize;
             final namePad = isSmall ? 2.0 : 8.0;
             return GestureDetector(
-              onTap: () {
-                _incrementScore(isLeft);
-              },
-              onVerticalDragEnd: (details) {
-                if (details.primaryVelocity != null &&
-                    details.primaryVelocity! > 0) {
-                  _decrementScore(isLeft);
-                  setLocalState(() {
-                    showMinus = true;
-                    bgColor = Colors.red.withValues(alpha: .15);
-                  });
-                  Future.delayed(const Duration(milliseconds: 400), () {
-                    setLocalState(() {
-                      showMinus = false;
-                      bgColor = null;
-                    });
-                  });
-                }
-              },
+              onTap:
+                  _isWarmingUp
+                      ? null
+                      : () {
+                        _incrementScore(isLeft);
+                      },
+              onVerticalDragEnd:
+                  _isWarmingUp
+                      ? null
+                      : (details) {
+                        if (details.primaryVelocity != null &&
+                            details.primaryVelocity! > 0) {
+                          _decrementScore(isLeft);
+                          setLocalState(() {
+                            showMinus = true;
+                            bgColor = Colors.red.withValues(alpha: .15);
+                          });
+                          Future.delayed(const Duration(milliseconds: 400), () {
+                            setLocalState(() {
+                              showMinus = false;
+                              bgColor = null;
+                            });
+                          });
+                        }
+                      },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 height: cardHeight,
@@ -387,26 +495,43 @@ class _GameScreenState extends State<GameScreen> {
                           ),
                           child: PopupMenuButton<String>(
                             initialValue: player,
-                            tooltip: 'Seleccionar jugador',
+                            tooltip:
+                                _isWarmingUp
+                                    ? 'No disponible durante calentamiento'
+                                    : 'Seleccionar jugador',
+                            enabled:
+                                !_isWarmingUp, // Deshabilitar durante calentamiento
                             onSelected: (nuevo) {
                               if (nuevo != player) {
                                 setState(() {
                                   if (isLeft) {
                                     player1 = nuevo;
+                                    player1AvatarId =
+                                        AvatarHelper.getDefaultAvatar(nuevo).id;
                                     if (player2 == nuevo) {
                                       player2 = widget.participantes.firstWhere(
                                         (n) => n != nuevo,
                                         orElse: () => '',
                                       );
+                                      player2AvatarId =
+                                          AvatarHelper.getDefaultAvatar(
+                                            player2!,
+                                          ).id;
                                     }
                                     _saveLastPlayers();
                                   } else {
                                     player2 = nuevo;
+                                    player2AvatarId =
+                                        AvatarHelper.getDefaultAvatar(nuevo).id;
                                     if (player1 == nuevo) {
                                       player1 = widget.participantes.firstWhere(
                                         (n) => n != nuevo,
                                         orElse: () => '',
                                       );
+                                      player1AvatarId =
+                                          AvatarHelper.getDefaultAvatar(
+                                            player1!,
+                                          ).id;
                                     }
                                     _saveLastPlayers();
                                   }
@@ -428,33 +553,53 @@ class _GameScreenState extends State<GameScreen> {
                                           ),
                                         )
                                         .toList(),
-                            child: Row(
+                            child: Column(
                               mainAxisSize: MainAxisSize.min,
-                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                if (isSaque)
+                                // Avatar prominente del jugador
+                                if (avatarId != null)
                                   Padding(
-                                    padding: const EdgeInsets.only(right: 6),
-                                    child: Icon(
-                                      Icons.sports_tennis,
-                                      size: nameFont + 4,
-                                      color: Colors.red,
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: AvatarHelper.buildAvatarWidget(
+                                      avatarId: avatarId,
+                                      size: isSmall ? 45 : 60,
+                                      showBorder: true,
+                                      borderColor:
+                                          isSaque ? colorScheme.error : null,
                                     ),
                                   ),
-                                Text(
-                                  player,
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.headlineLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    decoration: TextDecoration.underline,
-                                    fontSize: nameFont,
-                                    color: Colors.black,
-                                  ),
-                                  textAlign: TextAlign.center,
+                                // Nombre con icono de saque
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    if (isSaque)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          right: 6,
+                                        ),
+                                        child: Icon(
+                                          Icons.sports_tennis,
+                                          size: nameFont + 2,
+                                          color: colorScheme.error,
+                                        ),
+                                      ),
+                                    Text(
+                                      player,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.headlineLarge?.copyWith(
+                                        fontWeight: FontWeight.w500,
+                                        decoration: TextDecoration.underline,
+                                        fontSize: nameFont,
+                                        color: Colors.black,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.arrow_drop_down, size: 20),
+                                  ],
                                 ),
-                                const SizedBox(width: 4),
-                                const Icon(Icons.arrow_drop_down),
                               ],
                             ),
                           ),
@@ -466,7 +611,7 @@ class _GameScreenState extends State<GameScreen> {
                               style: Theme.of(
                                 context,
                               ).textTheme.displayLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
+                                fontWeight: FontWeight.w400,
                                 fontSize: localScoreFont,
                                 color: Colors.black,
                               ),
@@ -494,10 +639,37 @@ class _GameScreenState extends State<GameScreen> {
                                 style: TextStyle(
                                   fontSize: 32,
                                   color: Colors.red,
-                                  fontWeight: FontWeight.bold,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ],
+                          ),
+                        ),
+                      ),
+                    // Overlay durante calentamiento
+                    if (_isWarmingUp)
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(32),
+                          ),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.lock, size: 32, color: Colors.white),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Bloqueado',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -508,6 +680,187 @@ class _GameScreenState extends State<GameScreen> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildTournamentWinnerDialog(String winner, String loser) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Center(
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.85,
+            maxWidth: 340,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header con gradiente
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Theme.of(context).colorScheme.primary,
+                        Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.8),
+                      ],
+                    ),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(16),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(Icons.emoji_events, color: Colors.white, size: 32),
+                      const SizedBox(height: 8),
+                      Text(
+                        'VICTORIA',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Contenido
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      // Ganador destacado
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.green, width: 2),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.star, color: Colors.green, size: 18),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'GANADOR',
+                                  style: TextStyle(
+                                    color: Colors.green.shade700,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    letterSpacing: 0.8,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              winner,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.black87,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${score1 > score2 ? score1 : score2} puntos',
+                              style: TextStyle(
+                                color: Colors.green.shade600,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // Perdedor sutil
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              loser,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${score1 > score2 ? score2 : score1} pts',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Botón de acción
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          icon: const Icon(Icons.arrow_forward, size: 16),
+                          label: const Text(
+                            'Continuar Torneo',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor:
+                                Theme.of(context).colorScheme.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -542,7 +895,7 @@ class _GameScreenState extends State<GameScreen> {
               Text(
                 '¡GANADOR!',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w500,
                   color: Theme.of(context).colorScheme.primary,
                 ),
               ),
@@ -550,7 +903,7 @@ class _GameScreenState extends State<GameScreen> {
               Text(
                 winner,
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(height: 24),
@@ -685,14 +1038,28 @@ class _GameScreenState extends State<GameScreen> {
                             color: colorScheme.primary,
                           ),
                           const SizedBox(width: 16),
-                          Text(
-                            'Calentamiento',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: colorScheme.onPrimaryContainer,
-                            ),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Calentamiento',
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w500,
+                                  color: colorScheme.onPrimaryContainer,
+                                ),
+                              ),
+                              Text(
+                                'Las puntuaciones están bloqueadas',
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.onPrimaryContainer
+                                      .withValues(alpha: 0.8),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(width: 24),
                           Text(
@@ -700,7 +1067,7 @@ class _GameScreenState extends State<GameScreen> {
                             style: Theme.of(
                               context,
                             ).textTheme.displaySmall?.copyWith(
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w400,
                               color: colorScheme.primary,
                             ),
                           ),

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:bloc/bloc.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../domain/entities/game.dart';
+import '../../domain/entities/player.dart';
 import '../../domain/repositories/game_repository.dart';
 import 'game_event.dart';
 import 'game_state.dart';
@@ -16,8 +17,8 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     : super(
         GameState(
           game: Game(
-            player1: '',
-            player2: '',
+            player1: const Player(name: '', avatarId: 'avatar_1'),
+            player2: const Player(name: '', avatarId: 'avatar_2'),
             currentServer: '',
             pointsToWin: 11,
           ),
@@ -32,6 +33,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     on<WarmupTicked>(_onWarmupTicked);
     on<ServerChanged>(_onServerChanged);
     on<PlayerChanged>(_onPlayerChanged);
+    on<PlayerAvatarChanged>(_onPlayerAvatarChanged);
   }
 
   Future<void> _onGameStarted(
@@ -41,18 +43,21 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     if (event.participants.length < 2) return;
 
     final lastPlayers = await _repository.getLastPlayers();
-    final player1 = lastPlayers['player1'];
-    final player2 = lastPlayers['player2'];
+    final player1Name = lastPlayers['player1'];
+    final player2Name = lastPlayers['player2'];
 
-    String initialPlayer1 = player1 ?? event.participants[0];
-    String initialPlayer2 = player2 ?? event.participants[1];
+    String initialPlayer1Name = player1Name ?? event.participants[0];
+    String initialPlayer2Name = player2Name ?? event.participants[1];
 
-    if (!event.participants.contains(initialPlayer1)) {
-      initialPlayer1 = event.participants[0];
+    if (!event.participants.contains(initialPlayer1Name)) {
+      initialPlayer1Name = event.participants[0];
     }
-    if (!event.participants.contains(initialPlayer2)) {
-      initialPlayer2 = event.participants[1];
+    if (!event.participants.contains(initialPlayer2Name)) {
+      initialPlayer2Name = event.participants[1];
     }
+
+    final initialPlayer1 = Player.fromString(initialPlayer1Name);
+    final initialPlayer2 = Player.fromString(initialPlayer2Name);
 
     final gameHistory = await _repository.getGameHistory();
 
@@ -61,7 +66,7 @@ class GameBloc extends Bloc<GameEvent, GameState> {
         game: Game(
           player1: initialPlayer1,
           player2: initialPlayer2,
-          currentServer: initialPlayer1,
+          currentServer: initialPlayer1.name,
           pointsToWin: event.pointsToWin,
         ),
         gameHistory: gameHistory,
@@ -122,13 +127,13 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     if (game.isExtendedMode) {
       // En modo extendido, el saque cambia en cada punto
       currentServer =
-          currentServer == game.player1 ? game.player2 : game.player1;
+          currentServer == game.player1.name ? game.player2.name : game.player1.name;
       remainingServes = 1;
     } else {
       // Modo normal: cambio de saque cada 2 puntos
       if (remainingServes == 1) {
         currentServer =
-            currentServer == game.player1 ? game.player2 : game.player1;
+            currentServer == game.player1.name ? game.player2.name : game.player1.name;
         remainingServes = 2;
       } else {
         remainingServes--;
@@ -241,8 +246,8 @@ class GameBloc extends Bloc<GameEvent, GameState> {
   }
 
   void _onServerChanged(ServerChanged event, Emitter<GameState> emit) {
-    if (event.newServer == state.game.player1 ||
-        event.newServer == state.game.player2) {
+    if (event.newServer == state.game.player1.name ||
+        event.newServer == state.game.player2.name) {
       emit(
         state.copyWith(
           game: state.game.copyWith(
@@ -260,20 +265,40 @@ class GameBloc extends Bloc<GameEvent, GameState> {
   ) async {
     Game newGame = state.game;
     if (event.isPlayer1) {
-      newGame = newGame.copyWith(player1: event.newPlayer);
-      if (newGame.player2 == event.newPlayer) {
+      final newPlayer = Player.fromString(event.newPlayer);
+      newGame = newGame.copyWith(player1: newPlayer);
+      if (newGame.player2.name == event.newPlayer) {
         // Evitar duplicados
         newGame = newGame.copyWith(player2: newGame.player1);
       }
     } else {
-      newGame = newGame.copyWith(player2: event.newPlayer);
-      if (newGame.player1 == event.newPlayer) {
+      final newPlayer = Player.fromString(event.newPlayer);
+      newGame = newGame.copyWith(player2: newPlayer);
+      if (newGame.player1.name == event.newPlayer) {
         // Evitar duplicados
         newGame = newGame.copyWith(player1: newGame.player2);
       }
     }
 
-    await _repository.saveLastPlayers(newGame.player1, newGame.player2);
+    await _repository.saveLastPlayers(newGame.player1.name, newGame.player2.name);
+    emit(state.copyWith(game: newGame));
+  }
+
+  void _onPlayerAvatarChanged(
+    PlayerAvatarChanged event,
+    Emitter<GameState> emit,
+  ) {
+    Game newGame = state.game;
+    if (event.isPlayer1) {
+      newGame = newGame.copyWith(
+        player1: newGame.player1.copyWith(avatarId: event.newAvatarId),
+      );
+    } else {
+      newGame = newGame.copyWith(
+        player2: newGame.player2.copyWith(avatarId: event.newAvatarId),
+      );
+    }
+
     emit(state.copyWith(game: newGame));
   }
 

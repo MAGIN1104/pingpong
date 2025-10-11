@@ -1,8 +1,9 @@
 import 'package:equatable/equatable.dart';
+import 'player.dart';
 
 class Game extends Equatable {
-  final String player1;
-  final String player2;
+  final Player player1;
+  final Player player2;
   final int score1;
   final int score2;
   final String currentServer;
@@ -36,14 +37,14 @@ class Game extends Equatable {
     return score1 == pointsToWin || score2 == pointsToWin;
   }
 
-  String? get winner {
+  Player? get winner {
     if (!hasWinner) return null;
     return score1 > score2 ? player1 : player2;
   }
 
   Game copyWith({
-    String? player1,
-    String? player2,
+    Player? player1,
+    Player? player2,
     int? score1,
     int? score2,
     String? currentServer,

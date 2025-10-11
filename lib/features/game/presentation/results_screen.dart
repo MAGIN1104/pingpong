@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 
-class ResultsScreen extends StatelessWidget {
+class ResultsScreen extends StatefulWidget {
   final List<Map<String, dynamic>> partidas;
   final Future<void> Function()? onClear;
   const ResultsScreen({super.key, required this.partidas, this.onClear});
+
+  @override
+  State<ResultsScreen> createState() => _ResultsScreenState();
+}
+
+class _ResultsScreenState extends State<ResultsScreen> {
+  bool _showDetailedView = false;
 
   @override
   Widget build(BuildContext context) {
@@ -13,7 +20,7 @@ class ResultsScreen extends StatelessWidget {
     final puntosFavor = <String, int>{};
     final puntosContra = <String, int>{};
     final jugados = <String, int>{};
-    for (final p in partidas) {
+    for (final p in widget.partidas) {
       final p1 = p["p1"];
       final p2 = p["p2"];
       final s1 = p["s1"] as int;
@@ -63,273 +70,493 @@ class ResultsScreen extends StatelessWidget {
     Widget winnerCard =
         mejorJugador == null
             ? const SizedBox.shrink()
-            : Card(
-              color: colorScheme.primaryContainer,
-              margin: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
+            : Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    colorScheme.primaryContainer,
+                    colorScheme.secondaryContainer,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: colorScheme.primary.withValues(alpha: 0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 20,
-                  horizontal: 24,
-                ),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isSmall = constraints.maxWidth < 340;
-                    final nameFont = isSmall ? 18.0 : 24.0;
-                    final infoFont = isSmall ? 13.0 : 16.0;
-                    return SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.emoji_events,
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.emoji_events,
+                    color: colorScheme.primary,
+                    size: 32,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Mejor jugador',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: colorScheme.onPrimaryContainer.withValues(
+                              alpha: 0.8,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          mejorJugador['jugador'].toString(),
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w500,
                             color: colorScheme.primary,
-                            size: 40,
                           ),
-                          const SizedBox(width: 16),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Mejor jugador',
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.titleMedium?.copyWith(
-                                  color: colorScheme.onPrimaryContainer,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Text(
-                                mejorJugador['jugador'].toString(),
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.headlineSmall?.copyWith(
-                                  color: colorScheme.primary,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: nameFont,
-                                ),
-                              ),
-                              Text(
-                                '${mejorJugador['victorias']} victorias  |  ${mejorJugador['winrate']}% win rate',
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.bodyLarge?.copyWith(
-                                  color: colorScheme.onPrimaryContainer,
-                                  fontSize: infoFont,
-                                ),
-                              ),
-                            ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${mejorJugador['victorias']} victorias • ${mejorJugador['winrate']}% win rate',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: colorScheme.onPrimaryContainer,
                           ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             );
 
-    Widget rankingTable = SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        columns: const [
-          DataColumn(label: Text('Jugador')),
-          DataColumn(label: Text('Partidos')),
-          DataColumn(label: Text('Victorias')),
-          DataColumn(label: Text('Derrotas')),
-          DataColumn(label: Text('Favor')),
-          DataColumn(label: Text('Contra')),
-          DataColumn(label: Text('Dif.')),
-          DataColumn(label: Text('Win %')),
-        ],
-        rows: [
-          for (final r in ranking)
-            DataRow(
-              color: WidgetStateProperty.resolveWith<Color?>((states) {
-                if (mejorJugador != null &&
-                    r['jugador'] == mejorJugador['jugador']) {
-                  return colorScheme.secondaryContainer;
-                }
-                return null;
-              }),
-              cells: [
-                DataCell(
-                  Row(
-                    children: [
-                      if (mejorJugador != null &&
-                          r['jugador'] == mejorJugador['jugador'])
-                        Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: Icon(
-                            Icons.emoji_events,
-                            color: colorScheme.primary,
-                            size: 20,
-                          ),
-                        ),
-                      Text(r['jugador'].toString()),
-                    ],
+    Widget rankingTable = Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Text(
+                  'Ranking de Jugadores',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: colorScheme.onSurface,
                   ),
                 ),
-                DataCell(Text('${r['jugados']}')),
-                DataCell(Text('${r['victorias']}')),
-                DataCell(Text('${r['derrotas']}')),
-                DataCell(Text('${r['favor']}')),
-                DataCell(Text('${r['contra']}')),
-                DataCell(Text('${r['diferencia']}')),
-                DataCell(Text('${r['winrate']}%')),
+                const Spacer(),
+                if (ranking.length > 3)
+                  TextButton(
+                    onPressed:
+                        () => setState(
+                          () => _showDetailedView = !_showDetailedView,
+                        ),
+                    child: Text(
+                      _showDetailedView ? 'Ver menos' : 'Ver más',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                  ),
               ],
+            ),
+          ),
+          ...ranking.take(_showDetailedView ? ranking.length : 3).map((r) {
+            final isWinner =
+                mejorJugador != null && r['jugador'] == mejorJugador['jugador'];
+            return Container(
+              margin: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color:
+                    isWinner
+                        ? colorScheme.primaryContainer.withValues(alpha: 0.5)
+                        : colorScheme.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color:
+                      isWinner
+                          ? colorScheme.primary.withValues(alpha: 0.3)
+                          : colorScheme.outline.withValues(alpha: 0.1),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  // Posición
+                  Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color:
+                          isWinner
+                              ? colorScheme.primary
+                              : colorScheme.outline.withValues(alpha: 0.3),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '${ranking.indexOf(r) + 1}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color:
+                              isWinner ? Colors.white : colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Nombre
+                  Expanded(
+                    child: Row(
+                      children: [
+                        if (isWinner)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: Icon(
+                              Icons.emoji_events,
+                              color: colorScheme.primary,
+                              size: 16,
+                            ),
+                          ),
+                        Text(
+                          r['jugador'].toString(),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight:
+                                isWinner ? FontWeight.w500 : FontWeight.w400,
+                            color:
+                                isWinner
+                                    ? colorScheme.primary
+                                    : colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Estadísticas compactas
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${r['victorias']}V - ${r['derrotas']}D',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                      Text(
+                        '${r['winrate']}%',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }),
+          if (!_showDetailedView && ranking.length > 3)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                '+${ranking.length - 3} más',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colorScheme.outline,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
             ),
         ],
       ),
     );
 
-    Widget tableSectionWrapped =
-        partidas.isEmpty
-            ? const Center(child: Text('No hay partidas guardadas'))
-            : SingleChildScrollView(
-              scrollDirection: Axis.vertical,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minWidth: 600, minHeight: 220),
-                  child: DataTable(
-                    columns: const [
-                      DataColumn(label: Text('#')),
-                      DataColumn(label: Text('Jugador 1')),
-                      DataColumn(label: Text('Score 1')),
-                      DataColumn(label: Text('Score 2')),
-                      DataColumn(label: Text('Jugador 2')),
-                      DataColumn(label: Text('Ganador')),
-                      DataColumn(label: Text('Diferencia')),
-                      DataColumn(label: Text('Fecha')),
-                    ],
-                    rows: [
-                      for (int i = 0; i < partidas.length; i++)
-                        _buildDataRow(partidas[i], i),
-                    ],
-                  ),
+    Widget recentMatches =
+        widget.partidas.isEmpty
+            ? Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.3,
                 ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.sports_tennis,
+                      size: 48,
+                      color: colorScheme.outline.withValues(alpha: 0.5),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'No hay partidas guardadas',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: colorScheme.outline,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+            : Container(
+              margin: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.3,
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Text(
+                          'Partidas Recientes',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (widget.partidas.length > 5)
+                          TextButton(
+                            onPressed:
+                                () => setState(
+                                  () => _showDetailedView = !_showDetailedView,
+                                ),
+                            child: Text(
+                              _showDetailedView ? 'Ver menos' : 'Ver todas',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  ...widget.partidas
+                      .take(_showDetailedView ? widget.partidas.length : 5)
+                      .map((partida) => _buildMatchCard(partida, colorScheme)),
+                  if (!_showDetailedView && widget.partidas.length > 5)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Text(
+                        '+${widget.partidas.length - 5} más',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colorScheme.outline,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             );
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isLandscape = constraints.maxWidth > constraints.maxHeight;
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Resultados'),
-            actions: [
-              if (onClear != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: FilledButton.icon(
-                    icon: const Icon(Icons.delete_forever),
-                    label: const Text('Limpiar resultados'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: colorScheme.errorContainer,
-                      foregroundColor: colorScheme.onErrorContainer,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 8,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Resultados'),
+        actions: [
+          if (widget.onClear != null)
+            IconButton(
+              onPressed: () async {
+                await widget.onClear!();
+                if (mounted) Navigator.of(context).pop();
+              },
+              icon: Icon(Icons.delete_forever, color: colorScheme.error),
+              tooltip: 'Limpiar resultados',
+            ),
+        ],
+      ),
+      body:
+          widget.partidas.isEmpty
+              ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.sports_tennis,
+                      size: 64,
+                      color: colorScheme.outline.withValues(alpha: 0.5),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No hay partidas guardadas',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: colorScheme.outline,
                       ),
                     ),
-                    onPressed: () async {
-                      await onClear!();
-                      Navigator.of(context).pop();
-                    },
-                  ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Juega algunas partidas para ver los resultados aquí',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: colorScheme.outline.withValues(alpha: 0.7),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
-            ],
-          ),
-          body: SafeArea(
-            child:
-                isLandscape
-                    ? Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Flexible(
-                          flex: 2,
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                winnerCard,
-                                const SizedBox(height: 16),
-                                rankingTable,
-                              ],
-                            ),
-                          ),
-                        ),
-                        const VerticalDivider(width: 1),
-                        Flexible(
-                          flex: 3,
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: tableSectionWrapped,
-                          ),
-                        ),
-                      ],
-                    )
-                    : SingleChildScrollView(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          winnerCard,
-                          const SizedBox(height: 16),
-                          rankingTable,
-                          const SizedBox(height: 16),
-                          tableSectionWrapped,
-                        ],
-                      ),
-                    ),
-          ),
-        );
-      },
+              )
+              : SingleChildScrollView(
+                child: Column(
+                  children: [
+                    winnerCard,
+                    const SizedBox(height: 8),
+                    rankingTable,
+                    const SizedBox(height: 8),
+                    recentMatches,
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
     );
   }
 
-  DataRow _buildDataRow(Map<String, dynamic> p, int index) {
-    final s1 = p["s1"];
-    final s2 = p["s2"];
-    final p1 = p["p1"];
-    final p2 = p["p2"];
+  Widget _buildMatchCard(
+    Map<String, dynamic> partida,
+    ColorScheme colorScheme,
+  ) {
+    final s1 = partida["s1"];
+    final s2 = partida["s2"];
+    final p1 = partida["p1"];
+    final p2 = partida["p2"];
     final ganador = s1 > s2 ? p1 : p2;
-    final fecha = (p["fecha"] is String
-            ? DateTime.parse(p["fecha"])
-            : p["fecha"])
-        .toString()
-        .substring(0, 16);
-    final diferencia = ((s1 - s2).abs()).toInt();
-    return DataRow(
-      cells: [
-        DataCell(Text('${index + 1}')),
-        DataCell(Text(p1)),
-        DataCell(Text('$s1')),
-        DataCell(Text('$s2')),
-        DataCell(Text(p2)),
-        DataCell(
-          Row(
+    final diferencia = (s1 - s2).abs();
+
+    final fecha =
+        (partida["fecha"] is String
+                ? DateTime.parse(partida["fecha"])
+                : partida["fecha"])
+            as DateTime;
+
+    final now = DateTime.now();
+    final diff = now.difference(fecha);
+    String fechaTexto;
+    if (diff.inDays > 0) {
+      fechaTexto = '${diff.inDays}d';
+    } else if (diff.inHours > 0) {
+      fechaTexto = '${diff.inHours}h';
+    } else {
+      fechaTexto = '${diff.inMinutes}m';
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outline.withValues(alpha: 0.2),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          // Resultado del partido
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Center(
+              child: Text(
+                '$s1-$s2',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: colorScheme.primary,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Jugadores
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  p1,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight:
+                        ganador == p1 ? FontWeight.w500 : FontWeight.w400,
+                    color:
+                        ganador == p1
+                            ? colorScheme.primary
+                            : colorScheme.onSurface,
+                  ),
+                ),
+                Text(
+                  'vs $p2',
+                  style: TextStyle(fontSize: 12, color: colorScheme.outline),
+                ),
+              ],
+            ),
+          ),
+          // Ganador
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Icon(Icons.emoji_events, color: Colors.blue, size: 18),
-              const SizedBox(width: 4),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.emoji_events,
+                    color: colorScheme.primary,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    ganador,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
               Text(
-                ganador,
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                '+$diferencia • $fechaTexto',
+                style: TextStyle(fontSize: 10, color: colorScheme.outline),
               ),
             ],
           ),
-        ),
-        DataCell(Text('$diferencia')),
-        DataCell(Text(fecha)),
-      ],
+        ],
+      ),
     );
   }
 }

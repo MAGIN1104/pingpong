@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/entities/game.dart';
+import '../../domain/entities/player.dart';
 import '../../domain/repositories/game_repository.dart';
 
 class SharedPreferencesGameRepository implements GameRepository {
@@ -17,8 +18,8 @@ class SharedPreferencesGameRepository implements GameRepository {
     final List<dynamic> decoded = jsonDecode(gamesStr);
     return decoded.map((gameData) {
       return Game(
-        player1: gameData['p1'] as String,
-        player2: gameData['p2'] as String,
+        player1: Player.fromString(gameData['p1'] as String),
+        player2: Player.fromString(gameData['p2'] as String),
         score1: gameData['s1'] as int,
         score2: gameData['s2'] as int,
         currentServer: gameData['p1'] as String,
@@ -39,8 +40,8 @@ class SharedPreferencesGameRepository implements GameRepository {
         currentGames
             .map(
               (game) => {
-                'p1': game.player1,
-                'p2': game.player2,
+                'p1': game.player1.name,
+                'p2': game.player2.name,
                 's1': game.score1,
                 's2': game.score2,
                 'fecha':
