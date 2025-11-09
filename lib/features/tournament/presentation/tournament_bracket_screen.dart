@@ -4,7 +4,7 @@ import '../domain/entities/tournament.dart';
 import '../data/tournament_service.dart';
 import '../../game/presentation/game_screen.dart';
 import '../../game/domain/entities/player.dart';
-import '../../../core/utils/avatar_helper.dart';
+import '../../setup/presentation/setup_screen.dart';
 
 class TournamentBracketScreen extends StatefulWidget {
   final Tournament tournament;
@@ -20,18 +20,16 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
   final _tournamentService = TournamentService();
   late Tournament _tournament;
   bool _showDetailedView = false;
+  bool _hasShownChampionDialog = false;
 
   @override
   void initState() {
     super.initState();
     _tournament = widget.tournament;
+    _hasShownChampionDialog = false;
 
-    // Permitir todas las orientaciones
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    // Forzar orientación vertical para evitar problemas de rotación
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   }
 
   @override
@@ -47,12 +45,15 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
   Future<void> _refreshTournament() async {
     try {
       // Recargar el torneo desde el almacenamiento
-      await _tournamentService.loadCurrentTournament();
+      await _tournamentService.forceReloadTournament();
 
       // Actualizar el estado local
       if (_tournamentService.currentTournament != null) {
         setState(() {
           _tournament = _tournamentService.currentTournament!;
+          if (!_tournament.isCompleted) {
+            _hasShownChampionDialog = false;
+          }
         });
 
         // Mostrar confirmación
@@ -180,7 +181,7 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
     }
   }
 
-  Widget _buildTournamentHeader(ColorScheme colorScheme) {
+  Widget _buildTournamentHeader(ColorScheme colorScheme, TextTheme textTheme) {
     final completedMatches =
         _tournament.matches
             .where((m) => m.status == MatchStatus.completed)
@@ -193,78 +194,121 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            colorScheme.primaryContainer,
-            colorScheme.secondaryContainer,
-          ],
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(32),
+          bottomRight: Radius.circular(32),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeaderStat(
-            'Jugadores',
-            '${_tournament.players.length}',
-            Icons.people,
+          Text(
+            'Resumen del torneo',
+            style: textTheme.labelLarge?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
+            ),
           ),
-          _buildHeaderStat(
-            'Completados',
-            '$completedMatches/$totalMatches',
-            Icons.check_circle_outline,
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildHeaderStatCard(
+                  label: 'Jugadores',
+                  value: '${_tournament.players.length}',
+                  icon: Icons.people_alt_rounded,
+                  background: colorScheme.primaryContainer,
+                  foreground: colorScheme.onPrimaryContainer,
+                  textTheme: textTheme,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildHeaderStatCard(
+                  label: 'Completados',
+                  value: '$completedMatches/$totalMatches',
+                  icon: Icons.check_circle_rounded,
+                  background: colorScheme.secondaryContainer,
+                  foreground: colorScheme.onSecondaryContainer,
+                  textTheme: textTheme,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildHeaderStatCard(
+                  label: 'Por jugar',
+                  value: '$pendingMatches',
+                  icon: Icons.playlist_add_check_rounded,
+                  background: colorScheme.tertiaryContainer,
+                  foreground: colorScheme.onTertiaryContainer,
+                  textTheme: textTheme,
+                ),
+              ),
+            ],
           ),
-          _buildHeaderStat('Por Jugar', '$pendingMatches', Icons.sports_tennis),
         ],
       ),
     );
   }
 
-  Widget _buildHeaderStat(String label, String value, IconData icon) {
-    return Column(
-      children: [
-        Icon(icon, size: 20),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
-        ),
-        Text(label, style: const TextStyle(fontSize: 12)),
-      ],
-    );
-  }
-
-  Widget _buildProgressBar(ColorScheme colorScheme) {
+  Widget _buildHeaderStatCard({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color background,
+    required Color foreground,
+    required TextTheme textTheme,
+  }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Progreso del Torneo',
-                style: TextStyle(fontSize: 12, color: colorScheme.outline),
-              ),
-              Text(
-                '${(_tournament.progress * 100).toStringAsFixed(0)}%',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: colorScheme.primary,
-                ),
-              ),
-            ],
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: foreground.withValues(alpha: 0.12),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
           ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: _tournament.progress,
-              minHeight: 8,
-              backgroundColor: colorScheme.surfaceContainerHighest,
-              valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: foreground.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 20, color: foreground),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            value,
+            style: textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: foreground,
+              letterSpacing: -0.2,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: textTheme.labelMedium?.copyWith(
+              color: foreground.withValues(alpha: 0.78),
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -272,14 +316,78 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
     );
   }
 
-  Widget _buildBracketView(ColorScheme colorScheme) {
+  Widget _buildProgressBar(ColorScheme colorScheme, TextTheme textTheme) {
+    final progressPercent = (_tournament.progress * 100).toStringAsFixed(0);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Progreso del torneo',
+                  style: textTheme.labelLarge?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    '$progressPercent%',
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: LinearProgressIndicator(
+                value: _tournament.progress,
+                minHeight: 10,
+                backgroundColor: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.6,
+                ),
+                valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBracketView(ColorScheme colorScheme, TextTheme textTheme) {
     return Stack(
       children: [
         // Vista principal
         if (_showDetailedView)
           _buildDetailedView(colorScheme)
         else
-          _buildSmartView(colorScheme),
+          _buildSmartView(colorScheme, textTheme),
 
         // Toggle de vista en la esquina superior derecha
         Positioned(
@@ -315,7 +423,7 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
     );
   }
 
-  Widget _buildSmartView(ColorScheme colorScheme) {
+  Widget _buildSmartView(ColorScheme colorScheme, TextTheme textTheme) {
     final nextMatch = _getNextMatch();
     final completedMatches =
         _tournament.matches
@@ -338,6 +446,7 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
         // Información rápida del torneo
         _buildQuickTournamentInfo(
           colorScheme,
+          textTheme,
           completedMatches,
           totalMatches,
           pendingMatches,
@@ -347,7 +456,7 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
 
         // Partido actual destacado
         if (nextMatch != null) ...[
-          _buildCurrentMatchCard(nextMatch, colorScheme),
+          _buildCurrentMatchCard(nextMatch, colorScheme, textTheme),
           const SizedBox(height: 16),
         ],
 
@@ -363,6 +472,8 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
   Widget _buildDetailedView(ColorScheme colorScheme) {
     if (_tournament.type == TournamentType.roundRobin)
       return _buildRoundRobinView(colorScheme);
+    else if (_tournament.type == TournamentType.groupStage)
+      return _buildGroupStageView(colorScheme);
     else
       return _buildEliminationBracketView(colorScheme);
   }
@@ -381,6 +492,663 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
         return _buildMatchCard(match, colorScheme);
       },
     );
+  }
+
+  Widget _buildGroupStageView(ColorScheme colorScheme) {
+    // Separar partidos de grupos y eliminación
+    final groupMatches =
+        _tournament.matches.where((m) => m.isGroupStage == true).toList();
+    final eliminationMatches =
+        _tournament.matches.where((m) => m.isGroupStage == false).toList();
+
+    print(
+      '📊 Group Stage View: ${groupMatches.length} group matches, ${eliminationMatches.length} elimination matches',
+    );
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 60, 16, 80),
+      children: [
+        // Fase de Grupos
+        if (groupMatches.isNotEmpty) ...[
+          _buildGroupStageSection(groupMatches, colorScheme),
+          const SizedBox(height: 16),
+          _buildGroupStandings(groupMatches, colorScheme),
+          const SizedBox(height: 24),
+        ],
+
+        // Fase de Eliminación (si existe)
+        if (eliminationMatches.isNotEmpty) ...[
+          _buildEliminationSection(eliminationMatches, colorScheme),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildGroupStageSection(
+    List<TournamentMatch> groupMatches,
+    ColorScheme colorScheme,
+  ) {
+    // Agrupar partidos por grupo
+    final groups = <String, List<TournamentMatch>>{};
+    for (final match in groupMatches) {
+      if (match.groupId != null) {
+        groups.putIfAbsent(match.groupId!, () => []).add(match);
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Título de la sección
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: colorScheme.primaryContainer,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.group_work, color: colorScheme.primary, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'FASE DE GRUPOS',
+                style: TextStyle(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Mostrar cada grupo
+        ...groups.entries.map((groupEntry) {
+          final groupId = groupEntry.key;
+          final groupMatches = groupEntry.value;
+          final completedInGroup =
+              groupMatches
+                  .where((m) => m.status == MatchStatus.completed)
+                  .length;
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Título del grupo
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colorScheme.secondary,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      'GRUPO $groupId',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '$completedInGroup/${groupMatches.length}',
+                    style: TextStyle(fontSize: 12, color: colorScheme.outline),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              // Partidos del grupo
+              ...groupMatches.map(
+                (match) => _buildMatchCard(match, colorScheme),
+              ),
+              const SizedBox(height: 16),
+            ],
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildEliminationSection(
+    List<TournamentMatch> eliminationMatches,
+    ColorScheme colorScheme,
+  ) {
+    // Agrupar por ronda
+    final rounds = <int, List<TournamentMatch>>{};
+    for (final match in eliminationMatches) {
+      rounds.putIfAbsent(match.round, () => []).add(match);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Título de la sección
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: colorScheme.tertiaryContainer,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.emoji_events, color: colorScheme.tertiary, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'FASE DE ELIMINACIÓN',
+                style: TextStyle(
+                  color: colorScheme.tertiary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Mostrar cada ronda
+        ...rounds.entries.map((roundEntry) {
+          final round = roundEntry.key;
+          final roundMatches = roundEntry.value;
+          final completedInRound =
+              roundMatches
+                  .where((m) => m.status == MatchStatus.completed)
+                  .length;
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Título de la ronda
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      _getRoundName(round, rounds.keys.length),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '$completedInRound/${roundMatches.length}',
+                    style: TextStyle(fontSize: 12, color: colorScheme.outline),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              // Partidos de la ronda
+              ...roundMatches.map(
+                (match) => _buildMatchCard(match, colorScheme),
+              ),
+              const SizedBox(height: 16),
+            ],
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildGroupStandings(
+    List<TournamentMatch> groupMatches,
+    ColorScheme colorScheme,
+  ) {
+    // Agrupar partidos por grupo
+    final groups = <String, List<TournamentMatch>>{};
+    for (final match in groupMatches) {
+      if (match.groupId != null) {
+        groups.putIfAbsent(match.groupId!, () => []).add(match);
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Título de la sección
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.table_chart, color: colorScheme.onSurface, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'TABLA DE POSICIONES',
+                style: TextStyle(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Mostrar tabla de cada grupo
+        ...groups.entries.map((groupEntry) {
+          final groupId = groupEntry.key;
+          final groupMatches = groupEntry.value;
+          final standings = _calculateGroupStandings(groupMatches);
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Título del grupo
+              Text(
+                'GRUPO $groupId',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Tabla de posiciones
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.white,
+                      colorScheme.surfaceContainerHighest.withValues(
+                        alpha: 0.3,
+                      ),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  border: Border.all(
+                    color: colorScheme.outline.withValues(alpha: 0.1),
+                    width: 1,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: colorScheme.shadow.withValues(alpha: 0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    // Encabezados
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surface,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(6),
+                          topRight: Radius.circular(6),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          // Posición
+                          SizedBox(
+                            width: 32,
+                            child: Text(
+                              'Pos',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                                color: colorScheme.onSurface.withValues(
+                                  alpha: 0.7,
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Jugador
+                          Expanded(
+                            flex: 3,
+                            child: Text(
+                              'Jugador',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                                color: colorScheme.onSurface.withValues(
+                                  alpha: 0.7,
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Victorias
+                          SizedBox(
+                            width: 32,
+                            child: Text(
+                              'V',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                                color: colorScheme.onSurface.withValues(
+                                  alpha: 0.7,
+                                ),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                          // Derrotas
+                          SizedBox(
+                            width: 32,
+                            child: Text(
+                              'D',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                                color: colorScheme.onSurface.withValues(
+                                  alpha: 0.7,
+                                ),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                          // Puntos
+                          SizedBox(
+                            width: 36,
+                            child: Text(
+                              'Pts',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                                color: colorScheme.onSurface.withValues(
+                                  alpha: 0.7,
+                                ),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Filas de jugadores
+                    ...standings.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final player = entry.value;
+                      final stats = _getPlayerStats(player, groupMatches);
+                      final isQualified =
+                          index < (_tournament.playersAdvancingPerGroup ?? 2);
+
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient:
+                              isQualified
+                                  ? LinearGradient(
+                                    colors: [
+                                      colorScheme.primaryContainer.withValues(
+                                        alpha: 0.4,
+                                      ),
+                                      colorScheme.primaryContainer.withValues(
+                                        alpha: 0.2,
+                                      ),
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  )
+                                  : LinearGradient(
+                                    colors: [
+                                      Colors.white,
+                                      colorScheme.surfaceContainerHighest
+                                          .withValues(alpha: 0.2),
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                          border: Border(
+                            top: BorderSide(
+                              color: colorScheme.outline.withValues(
+                                alpha: 0.05,
+                              ),
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            // Posición
+                            SizedBox(
+                              width: 32,
+                              child: Text(
+                                '${index + 1}°',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 11,
+                                  color:
+                                      isQualified
+                                          ? colorScheme.primary
+                                          : colorScheme.onSurface.withValues(
+                                            alpha: 0.8,
+                                          ),
+                                ),
+                              ),
+                            ),
+
+                            // Nombre con indicador de posición
+                            Expanded(
+                              flex: 3,
+                              child: Row(
+                                children: [
+                                  // Indicador de posición
+                                  Container(
+                                    width: 20,
+                                    height: 20,
+                                    decoration: BoxDecoration(
+                                      color:
+                                          isQualified
+                                              ? colorScheme.primary.withValues(
+                                                alpha: 0.1,
+                                              )
+                                              : colorScheme
+                                                  .surfaceContainerHighest,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(
+                                        color:
+                                            isQualified
+                                                ? colorScheme.primary
+                                                    .withValues(alpha: 0.3)
+                                                : colorScheme.outline
+                                                    .withValues(alpha: 0.2),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        '${index + 1}',
+                                        style: TextStyle(
+                                          color:
+                                              isQualified
+                                                  ? colorScheme.primary
+                                                  : colorScheme.onSurface
+                                                      .withValues(alpha: 0.7),
+                                          fontWeight: FontWeight.w500,
+                                          fontSize: 10,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      player.name,
+                                      style: TextStyle(
+                                        fontWeight:
+                                            isQualified
+                                                ? FontWeight.w500
+                                                : FontWeight.w400,
+                                        fontSize: 13,
+                                        color:
+                                            isQualified
+                                                ? colorScheme.primary
+                                                : colorScheme.onSurface,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            // Victorias
+                            SizedBox(
+                              width: 32,
+                              child: Text(
+                                '${stats['wins']}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 11,
+                                  color: colorScheme.onSurface,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+
+                            // Derrotas
+                            SizedBox(
+                              width: 32,
+                              child: Text(
+                                '${stats['losses']}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 11,
+                                  color: colorScheme.onSurface.withValues(
+                                    alpha: 0.7,
+                                  ),
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+
+                            // Puntos (victorias * 3)
+                            SizedBox(
+                              width: 36,
+                              child: Text(
+                                '${stats['wins'] * 3}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 11,
+                                  color: colorScheme.onSurface,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  Map<String, dynamic> _getPlayerStats(
+    Player player,
+    List<TournamentMatch> groupMatches,
+  ) {
+    int wins = 0;
+    int losses = 0;
+
+    for (final match in groupMatches) {
+      if (match.status == MatchStatus.completed && match.winner != null) {
+        if (match.winner!.name == player.name) {
+          wins++;
+        } else if ((match.player1?.name == player.name ||
+            match.player2?.name == player.name)) {
+          losses++;
+        }
+      }
+    }
+
+    return {'wins': wins, 'losses': losses, 'matchesPlayed': wins + losses};
+  }
+
+  List<Player> _calculateGroupStandings(List<TournamentMatch> groupMatches) {
+    final playerStats = <String, Map<String, dynamic>>{};
+
+    // Inicializar estadísticas de cada jugador
+    final allPlayers = <Player>{};
+    for (final match in groupMatches) {
+      if (match.player1 != null) allPlayers.add(match.player1!);
+      if (match.player2 != null) allPlayers.add(match.player2!);
+    }
+
+    for (final player in allPlayers) {
+      playerStats[player.name] = {
+        'player': player,
+        'wins': 0,
+        'losses': 0,
+        'matchesPlayed': 0,
+      };
+    }
+
+    // Procesar resultados de partidos
+    for (final match in groupMatches) {
+      if (match.status == MatchStatus.completed && match.winner != null) {
+        final winner = match.winner!;
+        final loser =
+            match.player1?.name == winner.name
+                ? match.player2!
+                : match.player1!;
+
+        playerStats[winner.name]!['wins']++;
+        playerStats[winner.name]!['matchesPlayed']++;
+
+        playerStats[loser.name]!['losses']++;
+        playerStats[loser.name]!['matchesPlayed']++;
+      }
+    }
+
+    // Ordenar por victorias (descendente)
+    final sortedPlayers =
+        playerStats.values.toList()..sort((a, b) {
+          final winsA = a['wins'] as int;
+          final winsB = b['wins'] as int;
+
+          if (winsA != winsB) {
+            return winsB.compareTo(winsA); // Más victorias primero
+          }
+
+          // En caso de empate, menos derrotas primero
+          final lossesA = a['losses'] as int;
+          final lossesB = b['losses'] as int;
+          return lossesA.compareTo(lossesB);
+        });
+
+    return sortedPlayers.map((stats) => stats['player'] as Player).toList();
   }
 
   Widget _buildEliminationBracketView(ColorScheme colorScheme) {
@@ -457,46 +1225,56 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
 
     final isNextMatch = _getNextMatch()?.id == match.id;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      elevation:
-          match.status == MatchStatus.completed ? 1 : (isNextMatch ? 6 : 2),
-      child: InkWell(
-        onTap: canPlay ? () => _playMatch(match) : null,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color:
-                  match.status == MatchStatus.completed
-                      ? colorScheme.outline.withValues(alpha: 0.2)
-                      : isNextMatch
-                      ? colorScheme.primary
-                      : colorScheme.primary.withValues(alpha: 0.5),
-              width:
-                  match.status == MatchStatus.completed
-                      ? 1
-                      : (isNextMatch ? 3 : 2),
-            ),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient:
+            isNextMatch
+                ? LinearGradient(
+                  colors: [
+                    colorScheme.primary.withValues(alpha: 0.15),
+                    colorScheme.primary.withValues(alpha: 0.08),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+                : LinearGradient(
+                  colors: [
+                    Colors.white,
+                    colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+        boxShadow: [
+          BoxShadow(
             color:
-                match.status == MatchStatus.completed
-                    ? colorScheme.surfaceContainerHighest.withValues(alpha: 0.3)
-                    : isNextMatch
-                    ? colorScheme.primaryContainer.withValues(alpha: 0.3)
-                    : null,
-            boxShadow:
                 isNextMatch
-                    ? [
-                      BoxShadow(
-                        color: colorScheme.primary.withValues(alpha: 0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ]
-                    : null,
+                    ? colorScheme.primary.withValues(alpha: 0.2)
+                    : colorScheme.shadow.withValues(alpha: 0.1),
+            blurRadius: isNextMatch ? 20 : 8,
+            offset: const Offset(0, 4),
           ),
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border.all(
+          color:
+              isNextMatch
+                  ? colorScheme.primary.withValues(alpha: 0.4)
+                  : colorScheme.outline.withValues(alpha: 0.1),
+          width: isNextMatch ? 2 : 1,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: canPlay ? () => _playMatch(match) : null,
+          borderRadius: BorderRadius.circular(20),
           child: Row(
             children: [
               // Player 1
@@ -518,45 +1296,88 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
                     if (isNextMatch) ...[
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
+                          horizontal: 16,
+                          vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color: colorScheme.primary,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          'SIGUIENTE',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
+                          gradient: LinearGradient(
+                            colors: [
+                              colorScheme.primary,
+                              colorScheme.primary.withValues(alpha: 0.8),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: colorScheme.primary.withValues(alpha: 0.4),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                            BoxShadow(
+                              color: colorScheme.primary.withValues(alpha: 0.2),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Icon(
+                                Icons.play_arrow_rounded,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text(
+                              'SIGUIENTE',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 12),
                     ],
                     Text(
                       match.status == MatchStatus.completed ? 'VS' : 'vs',
                       style: TextStyle(
                         fontWeight: FontWeight.w500,
                         fontSize:
-                            match.status == MatchStatus.completed ? 12 : 16,
+                            match.status == MatchStatus.completed ? 13 : 16,
                         color:
                             match.status == MatchStatus.completed
-                                ? colorScheme.outline
+                                ? colorScheme.onSurface.withValues(alpha: 0.6)
                                 : colorScheme.primary,
+                        letterSpacing: 0.5,
                       ),
                     ),
-                    if (canPlay) ...[
-                      const SizedBox(height: 4),
-                      Icon(
-                        Icons.play_circle_filled,
-                        color:
-                            isNextMatch
-                                ? colorScheme.primary
-                                : colorScheme.primary.withValues(alpha: 0.7),
-                        size: isNextMatch ? 28 : 20,
+                    if (canPlay && !isNextMatch) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.play_circle_filled_rounded,
+                          color: colorScheme.primary,
+                          size: 20,
+                        ),
                       ),
                     ],
                   ],
@@ -587,13 +1408,12 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
   ) {
     if (player == null) {
       return Container(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(8),
+          color: colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: colorScheme.outline.withValues(alpha: 0.3),
-            style: BorderStyle.solid,
+            color: colorScheme.outline.withValues(alpha: 0.2),
             width: 1,
           ),
         ),
@@ -601,9 +1421,9 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
           child: Text(
             'Por definir',
             style: TextStyle(
-              color: colorScheme.outline,
-              fontStyle: FontStyle.italic,
-              fontSize: 11,
+              fontSize: 13,
+              color: colorScheme.onSurface.withValues(alpha: 0.6),
+              fontWeight: FontWeight.w400,
             ),
           ),
         ),
@@ -611,58 +1431,115 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
     }
 
     return Container(
-      padding: const EdgeInsets.all(6),
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
       decoration: BoxDecoration(
-        color:
+        gradient:
             isWinner
-                ? colorScheme.primaryContainer.withValues(alpha: 0.5)
-                : colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(6),
+                ? LinearGradient(
+                  colors: [
+                    colorScheme.primaryContainer,
+                    colorScheme.primaryContainer.withValues(alpha: 0.7),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+                : LinearGradient(
+                  colors: [
+                    Colors.white,
+                    colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color:
               isWinner
-                  ? colorScheme.primary
-                  : colorScheme.outline.withValues(alpha: 0.3),
+                  ? colorScheme.primary.withValues(alpha: 0.8)
+                  : colorScheme.outline.withValues(alpha: 0.1),
           width: isWinner ? 2 : 1,
         ),
+        boxShadow: [
+          BoxShadow(
+            color:
+                isWinner
+                    ? colorScheme.primary.withValues(alpha: 0.2)
+                    : colorScheme.shadow.withValues(alpha: 0.05),
+            blurRadius: isWinner ? 12 : 6,
+            offset: const Offset(0, 3),
+          ),
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.03),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Avatar
-          AvatarHelper.buildAvatarWidget(
-            avatarId: player.avatarId,
-            size: 28,
-            showBorder: true,
-            borderColor: isWinner ? colorScheme.primary : null,
-          ),
-          const SizedBox(width: 6),
-          // Nombre y score
+          // Nombre y score en línea horizontal
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   player.name,
                   style: TextStyle(
                     fontWeight: isWinner ? FontWeight.w500 : FontWeight.w400,
-                    fontSize: 12,
+                    fontSize: 13,
+                    color:
+                        isWinner ? colorScheme.primary : colorScheme.onSurface,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (score != null)
+                if (score != null) ...[
+                  const SizedBox(height: 2),
                   Text(
-                    '$score pts',
-                    style: TextStyle(fontSize: 10, color: colorScheme.outline),
+                    '$score puntos',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colorScheme.onSurface.withValues(alpha: 0.7),
+                      fontWeight: FontWeight.w400,
+                    ),
                   ),
+                ],
               ],
             ),
           ),
-          // Icono de ganador
+          // Icono de ganador más elegante
           if (isWinner)
-            Icon(Icons.emoji_events, color: colorScheme.primary, size: 18),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    colorScheme.primary.withValues(alpha: 0.2),
+                    colorScheme.primary.withValues(alpha: 0.1),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: colorScheme.primary.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: colorScheme.primary.withValues(alpha: 0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Icon(
+                Icons.emoji_events_rounded,
+                color: colorScheme.primary,
+                size: 18,
+              ),
+            ),
         ],
       ),
     );
@@ -674,6 +1551,7 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
 
   Widget _buildQuickTournamentInfo(
     ColorScheme colorScheme,
+    TextTheme textTheme,
     int completed,
     int total,
     int pending,
@@ -682,22 +1560,26 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
     final estimatedTime = _calculateEstimatedTime(pending);
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            colorScheme.primaryContainer,
-            colorScheme.secondaryContainer,
+            colorScheme.primaryContainer.withValues(alpha: 0.95),
+            colorScheme.secondaryContainer.withValues(alpha: 0.9),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: colorScheme.primary.withValues(alpha: 0.15),
+          width: 1.2,
+        ),
         boxShadow: [
           BoxShadow(
-            color: colorScheme.primary.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: colorScheme.primary.withValues(alpha: 0.18),
+            blurRadius: 22,
+            offset: const Offset(0, 12),
           ),
         ],
       ),
@@ -705,69 +1587,107 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Icon(
-                Icons.emoji_events,
-                color: colorScheme.primary.withValues(alpha: 0.7),
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Progreso del Torneo',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.18),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.emoji_events_rounded,
                   color: colorScheme.onPrimaryContainer,
+                  size: 22,
                 ),
               ),
-              const Spacer(),
-              Text(
-                '${(progress * 100).toInt()}%',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  color: colorScheme.primary.withValues(alpha: 0.8),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Progreso del torneo',
+                      style: textTheme.titleSmall?.copyWith(
+                        color: colorScheme.onPrimaryContainer,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      estimatedTime.isEmpty
+                          ? 'En curso'
+                          : 'Est. $estimatedTime restantes',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onPrimaryContainer.withValues(
+                          alpha: 0.75,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: colorScheme.onPrimaryContainer.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Text(
+                  '${(progress * 100).toInt()}%',
+                  style: textTheme.titleSmall?.copyWith(
+                    color: colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 18),
           ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(12),
             child: LinearProgressIndicator(
               value: progress,
-              minHeight: 6,
-              backgroundColor: colorScheme.surface.withValues(alpha: 0.3),
+              minHeight: 10,
+              backgroundColor: colorScheme.onPrimaryContainer.withValues(
+                alpha: 0.12,
+              ),
               valueColor: AlwaysStoppedAnimation<Color>(
-                colorScheme.primary.withValues(alpha: 0.8),
+                colorScheme.onPrimaryContainer,
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          Row(
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 20,
+            runSpacing: 12,
             children: [
               _buildQuickStat(
-                'Completados',
-                '$completed/$total',
-                Icons.check_circle,
-                colorScheme,
+                label: 'Completados',
+                value: '$completed/$total',
+                icon: Icons.check_circle,
+                colorScheme: colorScheme,
+                textTheme: textTheme,
               ),
-              const SizedBox(width: 16),
               _buildQuickStat(
-                'Pendientes',
-                '$pending',
-                Icons.sports_tennis,
-                colorScheme,
+                label: 'Pendientes',
+                value: '$pending',
+                icon: Icons.sports_tennis,
+                colorScheme: colorScheme,
+                textTheme: textTheme,
               ),
-              if (estimatedTime.isNotEmpty) ...[
-                const SizedBox(width: 16),
+              if (estimatedTime.isNotEmpty)
                 _buildQuickStat(
-                  'Tiempo est.',
-                  estimatedTime,
-                  Icons.access_time,
-                  colorScheme,
+                  label: 'Tiempo est.',
+                  value: estimatedTime,
+                  icon: Icons.access_time_filled,
+                  colorScheme: colorScheme,
+                  textTheme: textTheme,
                 ),
-              ],
             ],
           ),
         ],
@@ -775,56 +1695,65 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
     );
   }
 
-  Widget _buildQuickStat(
-    String label,
-    String value,
-    IconData icon,
-    ColorScheme colorScheme,
-  ) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: colorScheme.onPrimaryContainer),
-        const SizedBox(width: 4),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: colorScheme.primary,
+  Widget _buildQuickStat({
+    required String label,
+    required String value,
+    required IconData icon,
+    required ColorScheme colorScheme,
+    required TextTheme textTheme,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: colorScheme.onPrimaryContainer),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colorScheme.onPrimaryContainer,
+                ),
               ),
-            ),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                color: colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
+              Text(
+                label,
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
+                ),
               ),
-            ),
-          ],
-        ),
-      ],
+            ],
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildCurrentMatchCard(
     TournamentMatch match,
     ColorScheme colorScheme,
+    TextTheme textTheme,
   ) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: colorScheme.primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colorScheme.primary, width: 2),
+        color: colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+        ),
         boxShadow: [
           BoxShadow(
-            color: colorScheme.primary.withValues(alpha: 0.2),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: colorScheme.shadow.withValues(alpha: 0.12),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -835,20 +1764,20 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
               Icon(
                 Icons.play_circle_filled,
                 color: colorScheme.primary,
-                size: 20,
+                size: 22,
               ),
               const SizedBox(width: 8),
               Text(
                 'Partido Actual',
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
                   color: colorScheme.primary,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
@@ -865,10 +1794,9 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
                   children: [
                     Text(
                       'VS',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: colorScheme.primary,
+                      style: textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.onSurface.withValues(alpha: 0.7),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -997,25 +1925,88 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
                       ..sort((a, b) => b.value.compareTo(a.value)))
                     .take(3)
                     .map((entry) {
-                      final player = _tournament.players.firstWhere(
-                        (p) => p.name == entry.key,
-                        orElse:
-                            () => Player(name: entry.key, avatarId: 'default'),
-                      );
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 16,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.white,
+                              colorScheme.surfaceContainerHighest.withValues(
+                                alpha: 0.3,
+                              ),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: colorScheme.outline.withValues(alpha: 0.1),
+                            width: 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: colorScheme.shadow.withValues(alpha: 0.05),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
                         child: Row(
                           children: [
-                            AvatarHelper.buildAvatarWidget(
-                              avatarId: player.avatarId,
-                              size: 20,
-                              showBorder: true,
+                            // Indicador de posición
+                            Container(
+                              width: 22,
+                              height: 22,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    colorScheme.primary.withValues(alpha: 0.2),
+                                    colorScheme.primary.withValues(alpha: 0.1),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: colorScheme.primary.withValues(
+                                    alpha: 0.3,
+                                  ),
+                                  width: 1,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: colorScheme.primary.withValues(
+                                      alpha: 0.1,
+                                    ),
+                                    blurRadius: 3,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '${playerWins.entries.toList().indexOf(entry) + 1}',
+                                  style: TextStyle(
+                                    color: colorScheme.primary,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 entry.key,
-                                style: const TextStyle(fontSize: 12),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w400,
+                                  color: colorScheme.onSurface,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -1099,25 +2090,65 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
-    // Mostrar pantalla de ganador si el torneo está completo
-    if (_tournament.isCompleted) {
-      if (_tournament.winner != null) {
-        return _buildWinnerScreen(colorScheme);
-      } else {
-        return _buildTieScreen(colorScheme);
-      }
+    if (_tournament.isCompleted && _tournament.winner == null) {
+      return _buildTieScreen(colorScheme);
     }
+
+    _maybeShowChampionDialog(colorScheme, textTheme);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_tournament.name),
-        centerTitle: true,
+        backgroundColor: colorScheme.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        toolbarHeight: 92,
+        titleSpacing: 20,
+        iconTheme: IconThemeData(color: colorScheme.onSurface),
+        actionsIconTheme: IconThemeData(color: colorScheme.onSurface),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              _tournament.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.2,
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${_localizedTournamentType()} • ${_tournament.pointsToWin} pts',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _refreshTournament,
             tooltip: 'Actualizar',
+          ),
+          IconButton(
+            icon: const Icon(Icons.bug_report),
+            onPressed: () {
+              _tournamentService.debugTournamentStructure();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Información de debug enviada a la consola'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            tooltip: 'Debug del torneo',
           ),
           IconButton(
             icon: const Icon(Icons.close),
@@ -1128,9 +2159,9 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
       ),
       body: Column(
         children: [
-          _buildTournamentHeader(colorScheme),
-          _buildProgressBar(colorScheme),
-          Expanded(child: _buildBracketView(colorScheme)),
+          _buildTournamentHeader(colorScheme, textTheme),
+          _buildProgressBar(colorScheme, textTheme),
+          Expanded(child: _buildBracketView(colorScheme, textTheme)),
         ],
       ),
       floatingActionButton:
@@ -1152,66 +2183,170 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
     );
   }
 
-  Widget _buildWinnerScreen(ColorScheme colorScheme) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Torneo Completado', style: TextStyle(fontSize: 18)),
-        centerTitle: true,
-      ),
-      body: Center(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.emoji_events, size: 80, color: colorScheme.primary),
-                const SizedBox(height: 20),
-                Text(
-                  'CAMPEÓN',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w500,
-                    color: colorScheme.primary,
-                    fontSize: 24,
-                  ),
+  String _localizedTournamentType() {
+    switch (_tournament.type) {
+      case TournamentType.singleElimination:
+        return 'Eliminación simple';
+      case TournamentType.doubleElimination:
+        return 'Doble eliminación';
+      case TournamentType.roundRobin:
+        return 'Todos contra todos';
+      case TournamentType.groupStage:
+        return 'Fase de grupos';
+    }
+  }
+
+  String _winnerInitials() {
+    final name = _tournament.winner?.name.trim();
+    if (name == null || name.isEmpty) return '🏓';
+    final parts =
+        name
+            .split(RegExp(r'\s+'))
+            .where((segment) => segment.isNotEmpty)
+            .toList();
+    if (parts.isEmpty) return name[0].toUpperCase();
+    final buffer = StringBuffer();
+    for (final segment in parts.take(2)) {
+      if (segment.isNotEmpty) {
+        buffer.write(segment[0].toUpperCase());
+      }
+    }
+    return buffer.isEmpty ? name[0].toUpperCase() : buffer.toString();
+  }
+
+  void _maybeShowChampionDialog(ColorScheme colorScheme, TextTheme textTheme) {
+    if (!_tournament.isCompleted ||
+        _tournament.winner == null ||
+        _hasShownChampionDialog) {
+      return;
+    }
+
+    _hasShownChampionDialog = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (dialogContext) => Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 32,
+                vertical: 24,
+              ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 28,
+                  vertical: 32,
                 ),
-                const SizedBox(height: 16),
-                AvatarHelper.buildAvatarWidget(
-                  avatarId: _tournament.winner!.avatarId,
-                  size: 70,
-                  showBorder: true,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  _tournament.winner!.name,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 22,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 40),
-                FilledButton.icon(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.home, size: 20),
-                  label: const Text(
-                    'Volver al Inicio',
-                    style: TextStyle(fontSize: 15),
-                  ),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 28,
-                      vertical: 14,
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 28,
+                      offset: const Offset(0, 18),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.emoji_events_rounded,
+                          size: 44,
+                          color: colorScheme.primary,
+                        ),
+                        const SizedBox(width: 16),
+                        Text(
+                          '¡GANADOR!',
+                          style: textTheme.headlineSmall?.copyWith(
+                            color: colorScheme.primary,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: colorScheme.primary.withValues(alpha: 0.25),
+                          width: 1.6,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            _winnerInitials(),
+                            style: textTheme.headlineMedium?.copyWith(
+                              color: colorScheme.primary,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _tournament.winner!.name.toUpperCase(),
+                            textAlign: TextAlign.center,
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () async {
+                          Navigator.of(dialogContext).pop();
+                          await _tournamentService.clearCompletedTournament();
+                          if (!mounted) return;
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(
+                              builder: (_) => const SetupScreen(),
+                            ),
+                            (route) => false,
+                          );
+                        },
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Nueva partida'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          textStyle: textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: colorScheme.onPrimary,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text('Ver resultados'),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
-      ),
-    );
+      );
+    });
   }
 
   Widget _buildTieScreen(ColorScheme colorScheme) {
@@ -1275,29 +2410,87 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
                   (p) => p.name == entry.key,
                 );
                 return Container(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 16,
+                    horizontal: 20,
+                  ),
                   decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: colorScheme.outline.withValues(alpha: 0.2),
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.white,
+                        colorScheme.surfaceContainerHighest.withValues(
+                          alpha: 0.4,
+                        ),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: colorScheme.outline.withValues(alpha: 0.1),
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: colorScheme.shadow.withValues(alpha: 0.08),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                      BoxShadow(
+                        color: colorScheme.shadow.withValues(alpha: 0.03),
+                        blurRadius: 2,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
                   ),
                   child: Row(
                     children: [
-                      AvatarHelper.buildAvatarWidget(
-                        avatarId: player.avatarId,
-                        size: 32,
-                        showBorder: true,
+                      // Indicador de posición
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              colorScheme.primary.withValues(alpha: 0.2),
+                              colorScheme.primary.withValues(alpha: 0.1),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: colorScheme.primary.withValues(alpha: 0.3),
+                            width: 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: colorScheme.primary.withValues(alpha: 0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: Text(
+                            '${wins.entries.toList().indexOf(entry) + 1}',
+                            style: TextStyle(
+                              color: colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           player.name,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w500,
                             fontSize: 14,
+                            color: colorScheme.onSurface,
                           ),
                         ),
                       ),

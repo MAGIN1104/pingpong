@@ -1,3 +1,4 @@
+import 'package:characters/characters.dart';
 import 'package:flutter/material.dart';
 
 class ResultsScreen extends StatefulWidget {
@@ -72,68 +73,113 @@ class _ResultsScreenState extends State<ResultsScreen> {
             ? const SizedBox.shrink()
             : Container(
               margin: const EdgeInsets.all(16),
-              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    colorScheme.primaryContainer,
-                    colorScheme.secondaryContainer,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+                color: colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: colorScheme.primary.withValues(alpha: 0.3),
+                  width: 1,
                 ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: colorScheme.primary.withValues(alpha: 0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.emoji_events,
-                    color: colorScheme.primary,
-                    size: 32,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Mejor jugador',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: colorScheme.onPrimaryContainer.withValues(
-                              alpha: 0.8,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    // Identificador del ganador
+                    Container(
+                      height: 58,
+                      width: 58,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: colorScheme.primary.withValues(alpha: 0.14),
+                        border: Border.all(
+                          color: colorScheme.primary,
+                          width: 2,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        _buildInitials(mejorJugador['jugador'].toString()),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+
+                    // Información del ganador
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.emoji_events,
+                                color: colorScheme.primary,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Mejor Jugador',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: colorScheme.primary,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            mejorJugador['jugador'].toString(),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.onPrimaryContainer,
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${mejorJugador['victorias']} victorias • ${mejorJugador['winrate']}% win rate',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colorScheme.onPrimaryContainer.withValues(
+                                alpha: 0.7,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Estadísticas adicionales
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
                         Text(
-                          mejorJugador['jugador'].toString(),
+                          '${mejorJugador['jugados']}',
                           style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w500,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
                             color: colorScheme.primary,
                           ),
                         ),
-                        const SizedBox(height: 4),
                         Text(
-                          '${mejorJugador['victorias']} victorias • ${mejorJugador['winrate']}% win rate',
+                          'Partidas',
                           style: TextStyle(
-                            fontSize: 13,
-                            color: colorScheme.onPrimaryContainer,
+                            fontSize: 10,
+                            color: colorScheme.onPrimaryContainer.withValues(
+                              alpha: 0.7,
+                            ),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
 
@@ -382,7 +428,15 @@ class _ResultsScreenState extends State<ResultsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Resultados'),
+        title: Text(
+          'Resultados',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: Theme.of(context).colorScheme.onSurface,
+            letterSpacing: -0.1,
+          ),
+        ),
+        centerTitle: true,
         actions: [
           if (widget.onClear != null)
             IconButton(
@@ -450,7 +504,11 @@ class _ResultsScreenState extends State<ResultsScreen> {
     final p1 = partida["p1"];
     final p2 = partida["p2"];
     final ganador = s1 > s2 ? p1 : p2;
-    final diferencia = (s1 - s2).abs();
+    final totalPuntos = s1 + s2;
+    final porcentaje1 =
+        totalPuntos > 0 ? ((s1 / totalPuntos) * 100).toStringAsFixed(1) : '0.0';
+    final porcentaje2 =
+        totalPuntos > 0 ? ((s2 / totalPuntos) * 100).toStringAsFixed(1) : '0.0';
 
     final fecha =
         (partida["fecha"] is String
@@ -471,7 +529,6 @@ class _ResultsScreenState extends State<ResultsScreen> {
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(8),
@@ -480,83 +537,323 @@ class _ResultsScreenState extends State<ResultsScreen> {
           width: 1,
         ),
       ),
-      child: Row(
+      child: Column(
         children: [
-          // Resultado del partido
+          // Header con fecha
           Container(
-            width: 40,
-            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: colorScheme.primaryContainer.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Center(
-              child: Text(
-                '$s1-$s2',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: colorScheme.primary,
-                ),
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(8),
+                topRight: Radius.circular(8),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          // Jugadores
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
                 Text(
-                  p1,
+                  'Partida • $fechaTexto',
                   style: TextStyle(
-                    fontSize: 14,
-                    fontWeight:
-                        ganador == p1 ? FontWeight.w500 : FontWeight.w400,
-                    color:
-                        ganador == p1
-                            ? colorScheme.primary
-                            : colorScheme.onSurface,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
-                Text(
-                  'vs $p2',
-                  style: TextStyle(fontSize: 12, color: colorScheme.outline),
-                ),
-              ],
-            ),
-          ),
-          // Ganador
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+                const Spacer(),
+                if (ganador == p1)
                   Icon(
                     Icons.emoji_events,
                     color: colorScheme.primary,
                     size: 16,
                   ),
-                  const SizedBox(width: 4),
-                  Text(
-                    ganador,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: colorScheme.primary,
-                    ),
+                if (ganador == p2)
+                  Icon(
+                    Icons.emoji_events,
+                    color: colorScheme.primary,
+                    size: 16,
                   ),
-                ],
-              ),
-              Text(
-                '+$diferencia • $fechaTexto',
-                style: TextStyle(fontSize: 10, color: colorScheme.outline),
-              ),
-            ],
+              ],
+            ),
+          ),
+
+          // Tabla de resultados estilo campeonato
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              children: [
+                // Headers de la tabla
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        'JUGADOR',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.outline,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        'PTS',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.outline,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        '%',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.outline,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        'DIF',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.outline,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+
+                // Separador
+                Container(
+                  height: 1,
+                  color: colorScheme.outline.withValues(alpha: 0.2),
+                ),
+
+                const SizedBox(height: 8),
+
+                // Fila jugador 1
+                _buildPlayerRow(
+                  p1,
+                  s1,
+                  porcentaje1,
+                  (s1 - s2),
+                  ganador == p1,
+                  colorScheme,
+                ),
+
+                const SizedBox(height: 4),
+
+                // Fila jugador 2
+                _buildPlayerRow(
+                  p2,
+                  s2,
+                  porcentaje2,
+                  (s2 - s1),
+                  ganador == p2,
+                  colorScheme,
+                ),
+
+                const SizedBox(height: 8),
+
+                // Separador
+                Container(
+                  height: 1,
+                  color: colorScheme.outline.withValues(alpha: 0.2),
+                ),
+
+                const SizedBox(height: 8),
+
+                // Totales
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        'TOTAL',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.outline,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        '$totalPuntos',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.outline,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        '100.0',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.outline,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        '${(s1 - s2).abs()}',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.outline,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildPlayerRow(
+    String playerName,
+    int points,
+    String percentage,
+    int difference,
+    bool isWinner,
+    ColorScheme colorScheme,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color:
+            isWinner
+                ? colorScheme.primaryContainer.withValues(alpha: 0.3)
+                : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Row(
+              children: [
+                Container(
+                  height: 42,
+                  width: 42,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: (0 == 0
+                            ? colorScheme.primary
+                            : colorScheme.secondary)
+                        .withValues(alpha: 0.12),
+                    border: Border.all(
+                      color:
+                          0 == 0 ? colorScheme.primary : colorScheme.secondary,
+                      width: 1.4,
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    _buildInitials(playerName),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color:
+                          0 == 0 ? colorScheme.primary : colorScheme.secondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    playerName,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: isWinner ? FontWeight.w600 : FontWeight.w500,
+                      color:
+                          isWinner
+                              ? colorScheme.primary
+                              : colorScheme.onSurface,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (isWinner)
+                  Icon(
+                    Icons.emoji_events,
+                    color: colorScheme.primary,
+                    size: 14,
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Text(
+              '$points',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: isWinner ? colorScheme.primary : colorScheme.onSurface,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              '$percentage%',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: colorScheme.outline,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              difference >= 0 ? '+$difference' : '$difference',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color:
+                    difference >= 0
+                        ? Colors.green.shade600
+                        : Colors.red.shade600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _buildInitials(String name) {
+    return name
+        .split(' ')
+        .where((segment) => segment.isNotEmpty)
+        .take(2)
+        .map((segment) => segment.characters.first)
+        .join()
+        .toUpperCase();
   }
 }

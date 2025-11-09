@@ -1,24 +1,24 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:bloc/bloc.dart';
-import 'package:audioplayers/audioplayers.dart';
 import '../../domain/entities/game.dart';
 import '../../domain/entities/player.dart';
 import '../../domain/repositories/game_repository.dart';
+import '../../../../../core/services/sound_service.dart';
 import 'game_event.dart';
 import 'game_state.dart';
 
 class GameBloc extends Bloc<GameEvent, GameState> {
   final GameRepository _repository;
   Timer? _warmupTimer;
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  final SoundService _soundService = SoundService();
 
   GameBloc(this._repository)
     : super(
         GameState(
           game: Game(
-            player1: const Player(name: '', avatarId: 'avatar_1'),
-            player2: const Player(name: '', avatarId: 'avatar_2'),
+            player1: const Player(name: ''),
+            player2: const Player(name: ''),
             currentServer: '',
             pointsToWin: 11,
           ),
@@ -33,7 +33,6 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     on<WarmupTicked>(_onWarmupTicked);
     on<ServerChanged>(_onServerChanged);
     on<PlayerChanged>(_onPlayerChanged);
-    on<PlayerAvatarChanged>(_onPlayerAvatarChanged);
   }
 
   Future<void> _onGameStarted(
@@ -127,13 +126,17 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     if (game.isExtendedMode) {
       // En modo extendido, el saque cambia en cada punto
       currentServer =
-          currentServer == game.player1.name ? game.player2.name : game.player1.name;
+          currentServer == game.player1.name
+              ? game.player2.name
+              : game.player1.name;
       remainingServes = 1;
     } else {
       // Modo normal: cambio de saque cada 2 puntos
       if (remainingServes == 1) {
         currentServer =
-            currentServer == game.player1.name ? game.player2.name : game.player1.name;
+            currentServer == game.player1.name
+                ? game.player2.name
+                : game.player1.name;
         remainingServes = 2;
       } else {
         remainingServes--;
@@ -280,40 +283,24 @@ class GameBloc extends Bloc<GameEvent, GameState> {
       }
     }
 
-    await _repository.saveLastPlayers(newGame.player1.name, newGame.player2.name);
-    emit(state.copyWith(game: newGame));
-  }
-
-  void _onPlayerAvatarChanged(
-    PlayerAvatarChanged event,
-    Emitter<GameState> emit,
-  ) {
-    Game newGame = state.game;
-    if (event.isPlayer1) {
-      newGame = newGame.copyWith(
-        player1: newGame.player1.copyWith(avatarId: event.newAvatarId),
-      );
-    } else {
-      newGame = newGame.copyWith(
-        player2: newGame.player2.copyWith(avatarId: event.newAvatarId),
-      );
-    }
-
+    await _repository.saveLastPlayers(
+      newGame.player1.name,
+      newGame.player2.name,
+    );
     emit(state.copyWith(game: newGame));
   }
 
   void _playMatchPointSound() {
-    _audioPlayer.play(AssetSource('matchpoint.mp3'));
+    _soundService.playMatchPoint();
   }
 
   void _playWinSound() {
-    _audioPlayer.play(AssetSource('win.mp3'));
+    _soundService.playWin();
   }
 
   @override
   Future<void> close() {
     _warmupTimer?.cancel();
-    _audioPlayer.dispose();
     return super.close();
   }
 }

@@ -64,13 +64,3 @@ class PlayerChanged extends GameEvent {
   @override
   List<Object> get props => [isPlayer1, newPlayer];
 }
-
-class PlayerAvatarChanged extends GameEvent {
-  final bool isPlayer1;
-  final String newAvatarId;
-
-  const PlayerAvatarChanged({required this.isPlayer1, required this.newAvatarId});
-
-  @override
-  List<Object> get props => [isPlayer1, newAvatarId];
-}

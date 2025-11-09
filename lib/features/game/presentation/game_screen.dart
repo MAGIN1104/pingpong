@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:confetti/confetti.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
-import 'results_screen.dart';
-import 'dart:async';
-import '../../../core/utils/avatar_helper.dart';
+
 import '../../../core/services/haptic_service.dart';
 import '../../../core/services/sound_service.dart';
 import '../../../core/services/statistics_service.dart';
+import 'results_screen.dart';
 
 class GameScreen extends StatefulWidget {
   final List<String> participantes;
@@ -30,15 +29,14 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> {
+class _GameScreenState extends State<GameScreen>
+    with SingleTickerProviderStateMixin {
   int score1 = 0;
   int score2 = 0;
   String? player1;
   String? player2;
   String? saqueInicial;
   String? saqueActual;
-  String? player1AvatarId;
-  String? player2AvatarId;
   int saquesRestantes = 2;
   bool showMatchPoint = false;
   int ultimoMatchPointMostrado = -1;
@@ -51,11 +49,16 @@ class _GameScreenState extends State<GameScreen> {
   bool _isWarmingUp = false;
   int _warmupRemaining = 0;
   Timer? _warmupTimer;
+  late AnimationController _coinFlipController;
 
   // Servicios
   final _hapticService = HapticService();
   final _soundService = SoundService();
   final _statsService = StatisticsService();
+
+  String? _lastScorer;
+  int _currentStreak = 0;
+  bool _gameFinished = false;
 
   Future<void> _initServices() async {
     await _hapticService.init();
@@ -76,6 +79,10 @@ class _GameScreenState extends State<GameScreen> {
     _confettiController = ConfettiController(
       duration: const Duration(seconds: 2),
     );
+    _coinFlipController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
     puntosParaGanar = widget.modalidad;
     puntosParaMatchPoint = widget.modalidad - 1;
     if (widget.participantes.length >= 2) {
@@ -95,19 +102,73 @@ class _GameScreenState extends State<GameScreen> {
         return;
       }
 
+      // Validar que todos los participantes tengan nombres únicos
+      final uniqueNames = widget.participantes.toSet();
+      if (uniqueNames.length != widget.participantes.length) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Todos los participantes deben tener nombres únicos',
+              ),
+              duration: Duration(seconds: 3),
+              backgroundColor: Colors.red,
+            ),
+          );
+          Navigator.of(context).pop();
+        });
+        return;
+      }
+
       player1 = widget.participantes[0];
       player2 = widget.participantes[1];
-      player1AvatarId = AvatarHelper.getDefaultAvatar(player1!).id;
-      player2AvatarId = AvatarHelper.getDefaultAvatar(player2!).id;
       saqueInicial = player1;
       saqueActual = player1;
     }
     _loadPartidas();
+    _clearCorruptedPlayerData();
     _loadLastPlayers();
+
+    // Validación final: asegurar que no haya duplicados después de cargar
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (player1 != null && player2 != null && player1 == player2) {
+        print(
+          '⚠️ Game Screen: Final validation - duplicate players detected, fixing...',
+        );
+        setState(() {
+          final availablePlayers =
+              widget.participantes.where((p) => p != player1).toList();
+          if (availablePlayers.isNotEmpty) {
+            player2 = availablePlayers.first;
+          }
+        });
+      }
+    });
     _warmupTimer = Timer.periodic(
       const Duration(seconds: 1),
       (_) => _onWarmupTick(),
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
+
+  @override
+  void dispose() {
+    _confettiController.dispose();
+    _coinFlipController.dispose();
+    _warmupTimer?.cancel();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    super.dispose();
   }
 
   void _onWarmupTick() {
@@ -166,47 +227,94 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Future<void> _saveLastPlayers() async {
+    // Validar que los jugadores sean diferentes antes de guardar
+    if (player1 != null && player2 != null && player1 == player2) {
+      print(
+        '⚠️ Game Screen: Attempted to save duplicate players, preventing save...',
+      );
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('last_player1', player1 ?? '');
     await prefs.setString('last_player2', player2 ?? '');
+  }
+
+  // Función para limpiar datos corruptos en SharedPreferences
+  Future<void> _clearCorruptedPlayerData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final last1 = prefs.getString('last_player1');
+    final last2 = prefs.getString('last_player2');
+
+    if (last1 != null && last2 != null && last1 == last2) {
+      print('🧹 Game Screen: Clearing corrupted player data...');
+      await prefs.remove('last_player1');
+      await prefs.remove('last_player2');
+    }
   }
 
   Future<void> _loadLastPlayers() async {
     final prefs = await SharedPreferences.getInstance();
     final last1 = prefs.getString('last_player1');
     final last2 = prefs.getString('last_player2');
+
+    // Validar que los jugadores guardados sean diferentes
+    if (last1 != null && last2 != null && last1 == last2) {
+      print(
+        '⚠️ Game Screen: Duplicate players detected in saved data, ignoring...',
+      );
+      return;
+    }
+
     if (last1 != null && widget.participantes.contains(last1)) {
       setState(() {
         player1 = last1;
-        player1AvatarId = AvatarHelper.getDefaultAvatar(last1).id;
       });
     }
-    if (last2 != null && widget.participantes.contains(last2)) {
+    if (last2 != null &&
+        widget.participantes.contains(last2) &&
+        last2 != last1) {
       setState(() {
         player2 = last2;
-        player2AvatarId = AvatarHelper.getDefaultAvatar(last2).id;
       });
     }
-  }
 
-  @override
-  void dispose() {
-    _confettiController.dispose();
-    _warmupTimer?.cancel();
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
-    super.dispose();
+    // Validación adicional: asegurar que los jugadores cargados sean diferentes
+    if (player1 != null && player2 != null && player1 == player2) {
+      print(
+        '⚠️ Game Screen: Duplicate players after loading, resetting player2...',
+      );
+      setState(() {
+        // Buscar un jugador diferente para player2
+        final availablePlayers =
+            widget.participantes.where((p) => p != player1).toList();
+        if (availablePlayers.isNotEmpty) {
+          player2 = availablePlayers.first;
+        } else {
+          player2 = null;
+        }
+      });
+    }
   }
 
   void _incrementScore(bool isPlayer1) {
     // No permitir incrementar durante el calentamiento
-    if (_isWarmingUp) return;
+    if (_isWarmingUp || _gameFinished) return;
 
     // Haptic feedback y sonido
     _hapticService.light();
     _soundService.playScoreUp();
+
+    final scorer = isPlayer1 ? player1 : player2;
+    final target = puntosParaGanar;
+    final bool modoDeuce =
+        score1 >= puntosParaMatchPoint && score2 >= puntosParaMatchPoint;
+
+    if (!modoDeuce) {
+      if ((isPlayer1 && score1 >= target) || (!isPlayer1 && score2 >= target)) {
+        return;
+      }
+    }
 
     setState(() {
       if (isPlayer1) {
@@ -218,11 +326,13 @@ class _GameScreenState extends State<GameScreen> {
       _checkMatchPoint();
       _checkWinner();
     });
+
+    _updateStreak(scorer);
   }
 
   void _decrementScore(bool isPlayer1) {
     // No permitir decrementar durante el calentamiento
-    if (_isWarmingUp) return;
+    if (_isWarmingUp || _gameFinished) return;
 
     // Haptic feedback y sonido
     _hapticService.medium();
@@ -259,6 +369,9 @@ class _GameScreenState extends State<GameScreen> {
       }
       _checkMatchPoint();
     });
+
+    _lastScorer = null;
+    _currentStreak = 0;
   }
 
   void _handleSaque() {
@@ -282,46 +395,53 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
-  void _checkMatchPoint() async {
-    // En modo extendido (después de empate a 10) se necesita una ventaja de 2 puntos
-    bool modoExtendido =
-        score1 >= puntosParaMatchPoint && score2 >= puntosParaMatchPoint;
-    if (modoExtendido) {
-      // En modo extendido, cada punto puede ser match point si hay ventaja
-      final enMatchPoint = (score1 == score2 + 1) || (score2 == score1 + 1);
-      if (enMatchPoint && ultimoMatchPointMostrado != max(score1, score2)) {
-        setState(() {
-          showMatchPoint = true;
-          ultimoMatchPointMostrado = max(score1, score2);
-        });
-        _confettiController.play();
-        final player = AudioPlayer();
-        player.play(AssetSource('matchpoint.mp3'));
-        Future.delayed(const Duration(seconds: 2)).then((_) {
-          if (mounted && showMatchPoint) {
-            setState(() => showMatchPoint = false);
-          }
-        });
-      }
+  void _updateStreak(String? scorer) {
+    if (scorer == null) return;
+    if (_lastScorer == scorer) {
+      _currentStreak += 1;
     } else {
-      // Modo normal (antes del empate a 10)
-      final matchPointActual = puntosParaMatchPoint;
-      final enMatchPoint =
-          (score1 == matchPointActual || score2 == matchPointActual);
-      if (enMatchPoint && ultimoMatchPointMostrado != matchPointActual) {
-        setState(() {
-          showMatchPoint = true;
-          ultimoMatchPointMostrado = matchPointActual;
-        });
-        _confettiController.play();
-        final player = AudioPlayer();
-        player.play(AssetSource('matchpoint.mp3'));
-        Future.delayed(const Duration(seconds: 2)).then((_) {
-          if (mounted && showMatchPoint) {
-            setState(() => showMatchPoint = false);
-          }
-        });
-      }
+      _lastScorer = scorer;
+      _currentStreak = 1;
+    }
+
+    if (_currentStreak == 3) {
+      Future.microtask(() async {
+        await _soundService.playFinisher();
+      });
+    }
+  }
+
+  void _checkMatchPoint() async {
+    final bool modoDeuce =
+        score1 >= puntosParaMatchPoint && score2 >= puntosParaMatchPoint;
+    final int diferencia = (score1 - score2).abs();
+
+    bool activarMatchPoint = false;
+    int marcadorReferencia = max(score1, score2);
+
+    if (modoDeuce) {
+      // A partir del empate se requiere ventaja de un punto para tener match point
+      activarMatchPoint = diferencia == 1;
+      marcadorReferencia = max(score1, score2);
+    } else {
+      // Antes del deuce, el jugador que queda a un punto del objetivo está en match point
+      activarMatchPoint =
+          (score1 == puntosParaGanar - 1) || (score2 == puntosParaGanar - 1);
+      marcadorReferencia = puntosParaGanar - 1;
+    }
+
+    if (activarMatchPoint && ultimoMatchPointMostrado != marcadorReferencia) {
+      setState(() {
+        showMatchPoint = true;
+        ultimoMatchPointMostrado = marcadorReferencia;
+      });
+      _confettiController.play();
+      _soundService.playMatchPoint();
+      Future.delayed(const Duration(seconds: 2)).then((_) {
+        if (mounted && showMatchPoint) {
+          setState(() => showMatchPoint = false);
+        }
+      });
     }
   }
 
@@ -366,6 +486,11 @@ class _GameScreenState extends State<GameScreen> {
       // Haptic y sonido de victoria
       _hapticService.victory();
       _soundService.playWin();
+      if (mounted) {
+        setState(() {
+          _gameFinished = true;
+        });
+      }
 
       Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) {
@@ -411,275 +536,579 @@ class _GameScreenState extends State<GameScreen> {
       saquesRestantes = 2;
       showMatchPoint = false;
       ultimoMatchPointMostrado = -1;
+      _lastScorer = null;
+      _currentStreak = 0;
+      _gameFinished = false;
     });
   }
 
-  Widget _buildScoreCard(
+  Future<void> _tossForServe() async {
+    if (_isWarmingUp) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Espera a que termine el calentamiento para sortear el saque',
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    if (player1 == null || player2 == null) {
+      return;
+    }
+
+    final selectedPlayer = Random().nextBool() ? player1! : player2!;
+
+    setState(() {
+      saqueInicial = selectedPlayer;
+      saqueActual = selectedPlayer;
+      saquesRestantes = 2;
+    });
+
+    await _soundService.playClick();
+
+    if (!mounted) return;
+
+    final otherPlayer = selectedPlayer == player1 ? player2 : player1;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => _CoinFlipDialog(
+            controller: _coinFlipController,
+            winner: selectedPlayer,
+            opponent: otherPlayer,
+          ),
+    );
+  }
+
+  Widget _buildModernScoreCard(
     String player,
     int score,
     bool isLeft,
     ColorScheme colorScheme, {
-    double scoreFontSize = 110,
-    double nameFontSize = 18,
+    double scoreFontSize = 80,
+    double nameFontSize = 14,
     double cardHeight = 400,
   }) {
-    final avatarId = isLeft ? player1AvatarId : player2AvatarId;
+    final textTheme = Theme.of(context).textTheme;
     final isSaque = saqueActual == player;
-    final isWinner = (score == puntosParaGanar);
+    final isWinner = score == puntosParaGanar;
+
     return StatefulBuilder(
       builder: (context, setLocalState) {
         bool showMinus = false;
-        Color? bgColor;
+
         return LayoutBuilder(
           builder: (context, constraints) {
-            final availableHeight = cardHeight;
-            final isSmall = availableHeight < 220;
-            final localScoreFont = isSmall ? 48.0 : scoreFontSize;
-            final nameFont = isSmall ? 16.0 : nameFontSize;
-            final namePad = isSmall ? 2.0 : 8.0;
-            return GestureDetector(
-              onTap:
-                  _isWarmingUp
-                      ? null
-                      : () {
-                        _incrementScore(isLeft);
-                      },
-              onVerticalDragEnd:
-                  _isWarmingUp
-                      ? null
-                      : (details) {
-                        if (details.primaryVelocity != null &&
-                            details.primaryVelocity! > 0) {
-                          _decrementScore(isLeft);
-                          setLocalState(() {
-                            showMinus = true;
-                            bgColor = Colors.red.withValues(alpha: .15);
-                          });
-                          Future.delayed(const Duration(milliseconds: 400), () {
-                            setLocalState(() {
-                              showMinus = false;
-                              bgColor = null;
-                            });
-                          });
-                        }
-                      },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                height: cardHeight,
-                margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                decoration: BoxDecoration(
-                  color:
-                      bgColor ??
-                      (isWinner
-                          ? colorScheme.primaryContainer
-                          : isSaque
-                          ? colorScheme.error.withValues(alpha: .15)
-                          : colorScheme.surfaceContainerHighest),
-                  borderRadius: BorderRadius.circular(32),
-                  border: Border.all(
-                    color: isSaque ? colorScheme.error : colorScheme.outline,
-                    width: 2.5,
-                  ),
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: namePad,
-                          ),
-                          child: PopupMenuButton<String>(
-                            initialValue: player,
-                            tooltip:
-                                _isWarmingUp
-                                    ? 'No disponible durante calentamiento'
-                                    : 'Seleccionar jugador',
-                            enabled:
-                                !_isWarmingUp, // Deshabilitar durante calentamiento
-                            onSelected: (nuevo) {
-                              if (nuevo != player) {
-                                setState(() {
-                                  if (isLeft) {
-                                    player1 = nuevo;
-                                    player1AvatarId =
-                                        AvatarHelper.getDefaultAvatar(nuevo).id;
-                                    if (player2 == nuevo) {
-                                      player2 = widget.participantes.firstWhere(
-                                        (n) => n != nuevo,
-                                        orElse: () => '',
-                                      );
-                                      player2AvatarId =
-                                          AvatarHelper.getDefaultAvatar(
-                                            player2!,
-                                          ).id;
-                                    }
-                                    _saveLastPlayers();
-                                  } else {
-                                    player2 = nuevo;
-                                    player2AvatarId =
-                                        AvatarHelper.getDefaultAvatar(nuevo).id;
-                                    if (player1 == nuevo) {
-                                      player1 = widget.participantes.firstWhere(
-                                        (n) => n != nuevo,
-                                        orElse: () => '',
-                                      );
-                                      player1AvatarId =
-                                          AvatarHelper.getDefaultAvatar(
-                                            player1!,
-                                          ).id;
-                                    }
-                                    _saveLastPlayers();
-                                  }
-                                });
-                              }
-                            },
-                            itemBuilder:
-                                (context) =>
-                                    widget.participantes
-                                        .where(
-                                          (nombre) =>
-                                              nombre !=
-                                              (isLeft ? player2 : player1),
-                                        )
-                                        .map(
-                                          (nombre) => PopupMenuItem<String>(
-                                            value: nombre,
-                                            child: Text(nombre),
+            final effectiveHeight =
+                constraints.maxHeight.isFinite
+                    ? constraints.maxHeight
+                    : cardHeight;
+            final cardWidth =
+                constraints.maxWidth.isFinite ? constraints.maxWidth : 320.0;
+            final baseScoreFont = effectiveHeight * 0.42;
+            final double minScoreConstraint = min(48.0, scoreFontSize * 0.8);
+            final double maxScoreConstraint = max(64.0, scoreFontSize * 1.6);
+            final double localScoreFont =
+                baseScoreFont
+                    .clamp(minScoreConstraint, maxScoreConstraint)
+                    .toDouble();
+            final baseNameSize = effectiveHeight * 0.055;
+            final upperNameBound = max(18.0, nameFontSize);
+            final double nameFont =
+                baseNameSize
+                    .clamp(min(upperNameBound, 12.0), upperNameBound)
+                    .toDouble();
+            final isCompact = effectiveHeight < 260 || cardWidth < 220;
+            Color cardColor = const Color(0xFFF5F6FA);
+            if (isWinner) {
+              cardColor = const Color(0xFFFFF3D6); // toque dorado suave
+            } else if (isSaque) {
+              cardColor = const Color(0xFFE6F5EB); // verde menta tipo mesa
+            }
+            final Color accentColor =
+                isWinner
+                    ? const Color(0xFFC47F00)
+                    : isSaque
+                    ? const Color(0xFF1E7A4B)
+                    : colorScheme.outline;
+            final double verticalPadding =
+                (effectiveHeight * 0.06).clamp(16.0, 30.0).toDouble();
+            final double horizontalPadding =
+                (cardWidth * 0.025).clamp(14.0, 22.0).toDouble();
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: GestureDetector(
+                onTap: _isWarmingUp ? null : () => _incrementScore(isLeft),
+                onVerticalDragEnd:
+                    _isWarmingUp
+                        ? null
+                        : (details) {
+                          if (details.primaryVelocity != null &&
+                              details.primaryVelocity! > 0) {
+                            _decrementScore(isLeft);
+                            setLocalState(() => showMinus = true);
+                            Future.delayed(
+                              const Duration(milliseconds: 360),
+                              () {
+                                setLocalState(() => showMinus = false);
+                              },
+                            );
+                          }
+                        },
+                child: Material(
+                  color: cardColor,
+                  elevation: 18,
+                  shadowColor: (isSaque
+                          ? colorScheme.primary
+                          : colorScheme.outline)
+                      .withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(36),
+                  child: Stack(
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: horizontalPadding,
+                          vertical: verticalPadding,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: PopupMenuButton<String>(
+                                    initialValue: player,
+                                    tooltip:
+                                        _isWarmingUp
+                                            ? 'Cambios no disponibles durante el calentamiento'
+                                            : 'Cambiar jugador',
+                                    enabled: !_isWarmingUp,
+                                    padding: EdgeInsets.zero,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(22),
+                                    ),
+                                    onSelected: (nuevo) {
+                                      if (nuevo != player) {
+                                        final otherPlayer =
+                                            isLeft ? player2 : player1;
+                                        if (nuevo == otherPlayer) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                '$nuevo ya está jugando en el otro lado',
+                                              ),
+                                              duration: const Duration(
+                                                seconds: 2,
+                                              ),
+                                              backgroundColor: Colors.orange,
+                                            ),
+                                          );
+                                          return;
+                                        }
+
+                                        if ((isLeft && nuevo == player2) ||
+                                            (!isLeft && nuevo == player1)) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: const Text(
+                                                'No se puede seleccionar el mismo jugador en ambos lados',
+                                              ),
+                                              duration: const Duration(
+                                                seconds: 2,
+                                              ),
+                                              backgroundColor: Colors.red,
+                                            ),
+                                          );
+                                          return;
+                                        }
+
+                                        setState(() {
+                                          if (isLeft) {
+                                            player1 = nuevo;
+                                          } else {
+                                            player2 = nuevo;
+                                          }
+                                          _saveLastPlayers();
+                                        });
+                                      }
+                                    },
+                                    itemBuilder:
+                                        (context) =>
+                                            widget.participantes
+                                                .where(
+                                                  (nombre) =>
+                                                      nombre !=
+                                                      (isLeft
+                                                          ? player2
+                                                          : player1),
+                                                )
+                                                .map(
+                                                  (nombre) =>
+                                                      PopupMenuItem<String>(
+                                                        value: nombre,
+                                                        child: Text(
+                                                          nombre,
+                                                          style:
+                                                              textTheme
+                                                                  .bodyMedium,
+                                                        ),
+                                                      ),
+                                                )
+                                                .toList(),
+                                    child: Container(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: max(cardWidth * 0.03, 14),
+                                        vertical: isCompact ? 8 : 10,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.85,
+                                        ),
+                                        borderRadius: BorderRadius.circular(22),
+                                        border: Border.all(
+                                          color: colorScheme.outlineVariant
+                                              .withValues(alpha: 0.35),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              player,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: textTheme.titleMedium
+                                                  ?.copyWith(
+                                                    fontSize: nameFont,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                            ),
                                           ),
-                                        )
-                                        .toList(),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                // Avatar prominente del jugador
-                                if (avatarId != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 8),
-                                    child: AvatarHelper.buildAvatarWidget(
-                                      avatarId: avatarId,
-                                      size: isSmall ? 45 : 60,
-                                      showBorder: true,
-                                      borderColor:
-                                          isSaque ? colorScheme.error : null,
+                                          Icon(
+                                            Icons.keyboard_arrow_down_rounded,
+                                            color: colorScheme.outline,
+                                            size: isCompact ? 20 : 22,
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                // Nombre con icono de saque
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    if (isSaque)
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          right: 6,
-                                        ),
-                                        child: Icon(
-                                          Icons.sports_tennis,
-                                          size: nameFont + 2,
-                                          color: colorScheme.error,
-                                        ),
-                                      ),
-                                    Text(
-                                      player,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.headlineLarge?.copyWith(
-                                        fontWeight: FontWeight.w500,
-                                        decoration: TextDecoration.underline,
-                                        fontSize: nameFont,
-                                        color: Colors.black,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    const Icon(Icons.arrow_drop_down, size: 20),
-                                  ],
                                 ),
+                                const SizedBox(width: 12),
+                                if (isSaque)
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: accentColor.withValues(
+                                        alpha: 0.15,
+                                      ),
+                                      borderRadius: BorderRadius.circular(18),
+                                      border: Border.all(
+                                        color: accentColor.withValues(
+                                          alpha: 0.4,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 6,
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.play_arrow_rounded,
+                                            size: 18,
+                                            color: accentColor,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            'Saque',
+                                            style: textTheme.labelLarge
+                                                ?.copyWith(color: accentColor),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  const SizedBox.shrink(),
                               ],
                             ),
-                          ),
+                            SizedBox(height: isCompact ? 10 : 14),
+                            Expanded(
+                              child: Center(
+                                child: FittedBox(
+                                  fit: BoxFit.contain,
+                                  child: Text(
+                                    '$score',
+                                    style: textTheme.displayLarge?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: localScoreFont,
+                                      letterSpacing: -2.5,
+                                      color: colorScheme.onSurface,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: isCompact ? 10 : 14),
+                            Flexible(
+                              fit: FlexFit.loose,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    'Toca para sumar · Desliza hacia abajo para restar',
+                                    textAlign: TextAlign.center,
+                                    style: textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.outline,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        Expanded(
-                          child: Center(
-                            child: Text(
-                              '$score',
-                              style: Theme.of(
-                                context,
-                              ).textTheme.displayLarge?.copyWith(
-                                fontWeight: FontWeight.w400,
-                                fontSize: localScoreFont,
-                                color: Colors.black,
+                      ),
+                      if (isWinner)
+                        Positioned(
+                          top: 20,
+                          left: 20,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary.withValues(
+                                alpha: 0.14,
+                              ),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: colorScheme.primary.withValues(
+                                  alpha: 0.45,
+                                ),
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 6,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.emoji_events_rounded,
+                                    size: 18,
+                                    color: colorScheme.primary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Punto final',
+                                    style: textTheme.labelLarge?.copyWith(
+                                      color: colorScheme.primary,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
                         ),
-                      ],
-                    ),
-                    if (showMinus)
-                      Positioned(
-                        bottom: 32,
-                        child: AnimatedOpacity(
-                          opacity: showMinus ? 1 : 0,
-                          duration: const Duration(milliseconds: 200),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.remove_circle,
-                                color: Colors.red,
-                                size: 36,
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                '-1',
-                                style: TextStyle(
-                                  fontSize: 32,
-                                  color: Colors.red,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    // Overlay durante calentamiento
-                    if (_isWarmingUp)
-                      Positioned.fill(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(32),
-                          ),
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
+                      if (showMinus)
+                        Positioned(
+                          bottom: 32,
+                          left: 0,
+                          right: 0,
+                          child: AnimatedOpacity(
+                            opacity: showMinus ? 1 : 0,
+                            duration: const Duration(milliseconds: 200),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.lock, size: 32, color: Colors.white),
-                                const SizedBox(height: 8),
+                                Icon(
+                                  Icons.remove_circle_outline,
+                                  color: colorScheme.error,
+                                  size: 34,
+                                ),
+                                const SizedBox(width: 6),
                                 Text(
-                                  'Bloqueado',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 16,
+                                  '-1',
+                                  style: textTheme.titleLarge?.copyWith(
+                                    color: colorScheme.error,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ],
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                      if (_isWarmingUp)
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(36),
+                            ),
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.lock_rounded,
+                                    size: 30,
+                                    color: Colors.white,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Bloqueado',
+                                    style: textTheme.bodyMedium?.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             );
           },
         );
       },
+    );
+  }
+
+  Widget _buildMatchPointBanner(ColorScheme colorScheme, TextTheme textTheme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        decoration: BoxDecoration(
+          color: colorScheme.error.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: colorScheme.error.withValues(alpha: 0.45)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.whatshot_rounded, color: colorScheme.error),
+            const SizedBox(width: 10),
+            Text(
+              '¡Match point!',
+              style: textTheme.titleMedium?.copyWith(
+                color: colorScheme.error,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                'Necesitas ventaja de dos puntos para cerrar la partida.',
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.error.withValues(alpha: 0.75),
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWarmupBanner(ColorScheme colorScheme, TextTheme textTheme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(26),
+          gradient: LinearGradient(
+            colors: [
+              colorScheme.primaryContainer.withValues(alpha: 0.92),
+              colorScheme.secondaryContainer.withValues(alpha: 0.92),
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: colorScheme.primary.withValues(alpha: 0.18),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+        child: Row(
+          children: [
+            Icon(
+              Icons.local_fire_department,
+              size: 28,
+              color: colorScheme.primary,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Calentamiento activo',
+                    style: textTheme.titleMedium?.copyWith(
+                      color: colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    'Las puntuaciones están bloqueadas hasta finalizar el tiempo.',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onPrimaryContainer.withValues(
+                        alpha: 0.8,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              '${(_warmupRemaining ~/ 60).toString().padLeft(2, '0')}:${(_warmupRemaining % 60).toString().padLeft(2, '0')}',
+              style: textTheme.titleLarge?.copyWith(
+                color: colorScheme.primary,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+            const SizedBox(width: 12),
+            IconButton(
+              tooltip: 'Cancelar calentamiento',
+              onPressed: () {
+                setState(() {
+                  _isWarmingUp = false;
+                  _warmupTimer?.cancel();
+                });
+              },
+              icon: Icon(Icons.close_rounded, color: colorScheme.error),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -865,8 +1294,7 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Widget _buildWinnerDialog(String winner) {
-    final player = AudioPlayer();
-    player.play(AssetSource('win.mp3'));
+    // El sonido ya se reproduce cuando se detecta la victoria
     return Dialog(
       backgroundColor: Colors.transparent,
       child: Center(
@@ -946,208 +1374,184 @@ class _GameScreenState extends State<GameScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Partida en curso'), centerTitle: true),
-      body: Stack(
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final cardHeight = constraints.maxHeight;
-              final cardPadding = 0.0;
-              final cardFontSize = cardHeight > 400 ? 160.0 : 120.0;
-              final nameFontSize = cardHeight > 400 ? 20.0 : 16.0;
-              return Row(
+    final textTheme = Theme.of(context).textTheme;
+    final orientation = MediaQuery.of(context).orientation;
+
+    if (player1 == null || player2 == null) {
+      return Scaffold(
+        backgroundColor: colorScheme.surface,
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (orientation == Orientation.portrait) {
+      return Scaffold(
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          title: Text(
+            'Gira tu dispositivo',
+            style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
+        body: DecoratedBox(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFEEF0FF), Color(0xFFF7F8FC)],
+            ),
+          ),
+          child: SafeArea(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: Container(
-                      padding: EdgeInsets.all(cardPadding),
-                      child: _buildScoreCard(
-                        player1!,
-                        score1,
-                        true,
-                        colorScheme,
-                        scoreFontSize: cardFontSize,
-                        nameFontSize: nameFontSize,
-                        cardHeight: cardHeight,
-                      ),
+                  Icon(
+                    Icons.screen_rotation,
+                    size: 80,
+                    color: colorScheme.primary,
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'La experiencia está optimizada en horizontal.',
+                    textAlign: TextAlign.center,
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  Expanded(
-                    child: Container(
-                      padding: EdgeInsets.all(cardPadding),
-                      child: _buildScoreCard(
-                        player2!,
-                        score2,
-                        false,
-                        colorScheme,
-                        scoreFontSize: cardFontSize,
-                        nameFontSize: nameFontSize,
-                        cardHeight: cardHeight,
-                      ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Gira tu dispositivo para continuar con la partida.',
+                    textAlign: TextAlign.center,
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.outline,
                     ),
                   ),
                 ],
-              );
-            },
-          ),
-          if (_isWarmingUp)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8.0,
-                    vertical: 8.0,
-                  ),
-                  child: Material(
-                    elevation: 6,
-                    borderRadius: BorderRadius.circular(24),
-                    color: colorScheme.primaryContainer,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 16,
-                        horizontal: 24,
-                      ),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
-                        gradient: LinearGradient(
-                          colors: [
-                            colorScheme.primaryContainer,
-                            colorScheme.secondaryContainer,
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colorScheme.primary.withValues(alpha: .18),
-                            blurRadius: 16,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.local_fire_department,
-                            size: 32,
-                            color: colorScheme.primary,
-                          ),
-                          const SizedBox(width: 16),
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Calentamiento',
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w500,
-                                  color: colorScheme.onPrimaryContainer,
-                                ),
-                              ),
-                              Text(
-                                'Las puntuaciones están bloqueadas',
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.bodySmall?.copyWith(
-                                  color: colorScheme.onPrimaryContainer
-                                      .withValues(alpha: 0.8),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(width: 24),
-                          Text(
-                            '${(_warmupRemaining ~/ 60).toString().padLeft(2, '0')}:${(_warmupRemaining % 60).toString().padLeft(2, '0')}',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.displaySmall?.copyWith(
-                              fontWeight: FontWeight.w400,
-                              color: colorScheme.primary,
-                            ),
-                          ),
-                          const SizedBox(width: 24),
-                          IconButton(
-                            icon: Icon(
-                              Icons.close_rounded,
-                              color: colorScheme.error,
-                              size: 28,
-                            ),
-                            tooltip: 'Cancelar calentamiento',
-                            onPressed: () {
-                              setState(() {
-                                _isWarmingUp = false;
-                                _warmupTimer?.cancel();
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
               ),
             ),
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        title: Text(
+          'Partida en curso',
+          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: IconButton.filledTonal(
+              onPressed: _tossForServe,
+              tooltip: 'Sortear saque',
+              icon: const Icon(Icons.casino_rounded),
+            ),
+          ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.only(
-            bottom: 16,
-            left: 16,
-            right: 16,
-            top: 4,
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFEEF0FF), Color(0xFFF7F8FC)],
           ),
-          child: OutlinedButton.icon(
-            icon: const Icon(Icons.sports_tennis),
-            label: Text(
-              saqueActual ?? 'Seleccionar saque inicial',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            onPressed: () async {
-              final selected = await showDialog<String>(
-                context: context,
-                builder: (context) {
-                  return AlertDialog(
-                    title: const Text('Selecciona quién saca primero'),
-                    content: SizedBox(
-                      width: double.maxFinite,
-                      child: ListView(
-                        shrinkWrap: true,
-                        children:
-                            [player1, player2]
-                                .where((n) => n != null)
-                                .map(
-                                  (nombre) => ListTile(
-                                    title: Text(nombre!),
-                                    onTap:
-                                        () => Navigator.of(context).pop(nombre),
-                                  ),
-                                )
-                                .toList(),
+        ),
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final cardHeightHint = constraints.maxHeight * 0.76;
+              final cardWidth = constraints.maxWidth;
+              final cardFontSize = min(cardHeightHint * 0.55, cardWidth * 0.35);
+              final nameFontSize = min(cardHeightHint * 0.08, cardWidth * 0.05);
+              final double boardGap = max(18.0, constraints.maxWidth * 0.02);
+              final double dividerWidth = max(
+                2.0,
+                constraints.maxWidth * 0.004,
+              );
+              final bottomInset = MediaQuery.of(context).padding.bottom;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child:
+                        _isWarmingUp
+                            ? _buildWarmupBanner(colorScheme, textTheme)
+                            : const SizedBox.shrink(),
+                  ),
+                  if (_isWarmingUp) const SizedBox(height: 12),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child:
+                        showMatchPoint
+                            ? _buildMatchPointBanner(colorScheme, textTheme)
+                            : const SizedBox.shrink(),
+                  ),
+                  if (showMatchPoint) const SizedBox(height: 12),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: _buildModernScoreCard(
+                              player1!,
+                              score1,
+                              true,
+                              colorScheme,
+                              scoreFontSize: cardFontSize,
+                              nameFontSize: nameFontSize,
+                              cardHeight: cardHeightHint,
+                            ),
+                          ),
+                          SizedBox(width: boardGap * 0.5),
+                          Container(
+                            width: dividerWidth,
+                            margin: EdgeInsets.symmetric(
+                              vertical: max(18.0, cardHeightHint * 0.08),
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  colorScheme.outline.withValues(alpha: 0.0),
+                                  colorScheme.outline.withValues(alpha: 0.25),
+                                  colorScheme.outline.withValues(alpha: 0.0),
+                                ],
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: boardGap * 0.5),
+                          Expanded(
+                            child: _buildModernScoreCard(
+                              player2!,
+                              score2,
+                              false,
+                              colorScheme,
+                              scoreFontSize: cardFontSize,
+                              nameFontSize: nameFontSize,
+                              cardHeight: cardHeightHint,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  );
-                },
+                  ),
+                  SizedBox(height: max(12.0, bottomInset)),
+                ],
               );
-              if (selected != null &&
-                  (selected == player1 || selected == player2)) {
-                // Activar orientación landscape al iniciar la partida
-                await SystemChrome.setPreferredOrientations([
-                  DeviceOrientation.landscapeLeft,
-                  DeviceOrientation.landscapeRight,
-                ]);
-                setState(() {
-                  saqueActual = selected;
-                  saqueInicial = selected;
-                  saquesRestantes = 2;
-                });
-              }
             },
           ),
         ),
@@ -1157,7 +1561,7 @@ class _GameScreenState extends State<GameScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            FloatingActionButton(
+            FloatingActionButton.small(
               heroTag: 'warmup',
               onPressed: () async {
                 int selectedSeconds = 60;
@@ -1211,15 +1615,15 @@ class _GameScreenState extends State<GameScreen> {
               tooltip: 'Calentamiento',
               child: const Icon(Icons.local_fire_department),
             ),
-            const SizedBox(height: 16),
-            FloatingActionButton(
+            const SizedBox(height: 12),
+            FloatingActionButton.small(
               heroTag: 'reset',
               onPressed: _resetGame,
               tooltip: 'Reiniciar partida',
               child: const Icon(Icons.refresh),
             ),
-            const SizedBox(height: 16),
-            FloatingActionButton(
+            const SizedBox(height: 12),
+            FloatingActionButton.small(
               heroTag: 'results',
               onPressed: () {
                 Navigator.push(
@@ -1250,6 +1654,234 @@ class _GameScreenState extends State<GameScreen> {
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+  }
+}
+
+class _CoinFlipDialog extends StatefulWidget {
+  final AnimationController controller;
+  final String winner;
+  final String? opponent;
+
+  const _CoinFlipDialog({
+    required this.controller,
+    required this.winner,
+    this.opponent,
+  });
+
+  @override
+  State<_CoinFlipDialog> createState() => _CoinFlipDialogState();
+}
+
+class _CoinFlipDialogState extends State<_CoinFlipDialog> {
+  late final Animation<double> _spinAnimation;
+  bool _showResult = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _spinAnimation = CurvedAnimation(
+      parent: widget.controller,
+      curve: Curves.easeInOut,
+    );
+    widget.controller
+      ..stop()
+      ..reset()
+      ..repeat(period: const Duration(milliseconds: 220));
+
+    Future.delayed(const Duration(milliseconds: 1300), () {
+      if (!mounted) return;
+      setState(() => _showResult = true);
+      widget.controller.stop();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final Size screenSize = MediaQuery.of(context).size;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: Container(
+        width: min(screenSize.width * 0.8, 420),
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
+        decoration: BoxDecoration(
+          color: colorScheme.surface.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final bool isCompactHeight = constraints.maxHeight < 320;
+            final double loaderSize = max(
+              64.0,
+              min(constraints.maxWidth * 0.45, constraints.maxHeight * 0.38),
+            );
+            final double spacingAfterSpinner = isCompactHeight ? 18 : 28;
+            final double spacingAfterInfo = isCompactHeight ? 18 : 28;
+
+            return SingleChildScrollView(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8, bottom: 10),
+                        child: Text(
+                          'Saque inicial',
+                          style: textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.onSurface.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ),
+                    ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 400),
+                      child:
+                          _showResult
+                              ? Container(
+                                key: const ValueKey('result_view'),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 22,
+                                  vertical: 24,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(26),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.08,
+                                      ),
+                                      blurRadius: 28,
+                                      offset: const Offset(0, 18),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      widget.winner,
+                                      textAlign: TextAlign.center,
+                                      style: textTheme.headlineSmall?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.4,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                              : SizedBox(
+                                key: const ValueKey('spinner'),
+                                height: loaderSize,
+                                width: loaderSize,
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    SizedBox(
+                                      height: loaderSize,
+                                      width: loaderSize,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: loaderSize * 0.1,
+                                        valueColor: AlwaysStoppedAnimation(
+                                          colorScheme.primary,
+                                        ),
+                                        backgroundColor: colorScheme
+                                            .outlineVariant
+                                            .withValues(alpha: 0.2),
+                                      ),
+                                    ),
+                                    RotationTransition(
+                                      turns: Tween<double>(
+                                        begin: 0,
+                                        end: 1,
+                                      ).animate(_spinAnimation),
+                                      child: Icon(
+                                        Icons.autorenew_rounded,
+                                        size: loaderSize * 0.42,
+                                        color: colorScheme.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                    ),
+                    SizedBox(height: spacingAfterSpinner),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 250),
+                      child:
+                          _showResult
+                              ? const SizedBox(height: 2)
+                              : Column(
+                                key: const ValueKey('loading'),
+                                children: [
+                                  Text(
+                                    'Sorteando saque…',
+                                    style: textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: colorScheme.onSurface.withValues(
+                                        alpha: 0.7,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Esperando resultado',
+                                    style: textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurface.withValues(
+                                        alpha: 0.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                    ),
+                    SizedBox(height: spacingAfterInfo),
+                    SizedBox(
+                      width: double.infinity,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child:
+                            _showResult
+                                ? FilledButton.icon(
+                                  key: const ValueKey('ready'),
+                                  icon: const Icon(Icons.check_rounded),
+                                  label: const Text('Listo'),
+                                  onPressed: () => Navigator.of(context).pop(),
+                                )
+                                : FilledButton.icon(
+                                  key: const ValueKey('disabled'),
+                                  icon: const Icon(Icons.hourglass_top_rounded),
+                                  label: const Text('Sorteando…'),
+                                  onPressed: null,
+                                ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }

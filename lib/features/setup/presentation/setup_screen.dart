@@ -1,11 +1,9 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/utils/uppercase_text_formatter.dart';
-import '../../../core/utils/avatar_helper.dart';
 import '../../game/presentation/game_screen.dart';
 import '../../game/domain/entities/player.dart';
-import '../../game/presentation/widgets/avatar_selection_dialog.dart';
-import 'widgets/adaptive_setup_layout.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../../statistics/statistics_screen.dart';
@@ -22,8 +20,9 @@ class SetupScreen extends StatefulWidget {
 class _SetupScreenState extends State<SetupScreen> {
   final List<Player> participantes = [];
   final TextEditingController _controller = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   int modalidad = 11;
-  final ScrollController _scrollController = ScrollController();
+  String _searchTerm = '';
 
   // Constantes de seguridad
   static const int _maxParticipantes = 20;
@@ -53,9 +52,14 @@ class _SetupScreenState extends State<SetupScreen> {
 
   @override
   void dispose() {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    _loadParticipantes();
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
-    _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -80,14 +84,8 @@ class _SetupScreenState extends State<SetupScreen> {
           if (item is Map<String, dynamic>) {
             // Nuevo formato con avatar
             final name = item['name'] as String?;
-            final avatarId = item['avatarId'] as String?;
             if (name != null && _isValidNombre(name)) {
-              loadedParticipantes.add(
-                Player(
-                  name: name,
-                  avatarId: avatarId ?? AvatarHelper.getDefaultAvatar(name).id,
-                ),
-              );
+              loadedParticipantes.add(Player(name: name));
             }
           } else if (item is String && _isValidNombre(item)) {
             // Formato anterior (solo nombre) - compatibilidad hacia atrás
@@ -124,7 +122,7 @@ class _SetupScreenState extends State<SetupScreen> {
           participantes
               .where((p) => _isValidNombre(p.name))
               .take(_maxParticipantes)
-              .map((p) => {'name': p.name, 'avatarId': p.avatarId})
+              .map((p) => {'name': p.name})
               .toList();
       await prefs.setString('participantes', jsonEncode(sanitizedData));
     } catch (e) {
@@ -419,13 +417,22 @@ class _SetupScreenState extends State<SetupScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final mediaQuery = MediaQuery.of(context);
+
     return Scaffold(
+      extendBodyBehindAppBar: true,
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
-        title: const Text('Configuración'),
-        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        title: Text(
+          'Configuración',
+          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.bar_chart),
+            icon: const Icon(Icons.bar_chart_rounded),
             tooltip: 'Estadísticas',
             onPressed: () {
               Navigator.push(
@@ -437,8 +444,8 @@ class _SetupScreenState extends State<SetupScreen> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: 'Configuración',
+            icon: const Icon(Icons.settings_rounded),
+            tooltip: 'Preferencias',
             onPressed: () {
               Navigator.push(
                 context,
@@ -447,297 +454,503 @@ class _SetupScreenState extends State<SetupScreen> {
             },
           ),
         ],
-      ),
-      resizeToAvoidBottomInset: true,
-      body: AdaptiveSetupLayout(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 16),
-            Center(
-              child: Text(
-                'Configura tu partida',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
-                  fontSize: 28,
-                ),
-              ),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFFFFFFF), Color(0xF2EDF0FF)],
             ),
-            const SizedBox(height: 20),
-            Text(
-              'Modalidad',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w400),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                ChoiceChip(
-                  label: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    child: Text('7', style: TextStyle(fontSize: 18)),
-                  ),
-                  selected: modalidad == 7,
-                  onSelected: (_) => setState(() => modalidad = 7),
-                ),
-                ChoiceChip(
-                  label: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    child: Text('11', style: TextStyle(fontSize: 18)),
-                  ),
-                  selected: modalidad == 11,
-                  onSelected: (_) => setState(() => modalidad = 11),
-                ),
-                ChoiceChip(
-                  label: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    child: Text('21', style: TextStyle(fontSize: 18)),
-                  ),
-                  selected: modalidad == 21,
-                  onSelected: (_) => setState(() => modalidad = 21),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Participantes',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-                Text(
-                  '${participantes.length}/$_maxParticipantes',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: colorScheme.outline),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withValues(
-                    alpha: 0.15,
-                  ),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child:
-                    participantes.isEmpty
-                        ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.group_outlined,
-                                size: 40,
-                                color: colorScheme.outline,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Agrega participantes para comenzar',
-                                style: TextStyle(color: colorScheme.outline),
-                              ),
-                            ],
-                          ),
-                        )
-                        : Scrollbar(
-                          thumbVisibility: true,
-                          radius: const Radius.circular(12),
-                          controller: _scrollController,
-                          child: ListView.separated(
-                            controller: _scrollController,
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            itemCount: participantes.length,
-                            separatorBuilder:
-                                (_, __) =>
-                                    const Divider(height: 1, thickness: 0.5),
-                            itemBuilder: (context, index) {
-                              final player = participantes[index];
-                              return ListTile(
-                                key: ValueKey(
-                                  player.name,
-                                ), // Agregar key para optimizar rebuilds
-                                leading: GestureDetector(
-                                  onTap: () {
-                                    showDialog(
-                                      context: context,
-                                      builder:
-                                          (context) => AvatarSelectionDialog(
-                                            currentPlayer: player,
-                                            onAvatarSelected: (updatedPlayer) {
-                                              setState(() {
-                                                final index = participantes
-                                                    .indexWhere(
-                                                      (p) =>
-                                                          p.name == player.name,
-                                                    );
-                                                if (index != -1) {
-                                                  participantes[index] =
-                                                      updatedPlayer;
-                                                }
-                                              });
-                                              _saveParticipantes();
-                                            },
-                                          ),
-                                    );
-                                  },
-                                  child: AvatarHelper.buildAvatarWidget(
-                                    avatarId: player.avatarId,
-                                    size: 50,
-                                    showBorder: true,
-                                  ),
-                                ),
-                                title: Text(
-                                  player.name,
-                                  style: Theme.of(context).textTheme.bodyLarge
-                                      ?.copyWith(fontWeight: FontWeight.w500),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                subtitle: Text(
-                                  AvatarHelper.getAvatarById(
-                                        player.avatarId,
-                                      )?.name ??
-                                      '',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(color: colorScheme.outline),
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: Icon(
-                                        Icons.edit,
-                                        color: colorScheme.primary,
-                                      ),
-                                      onPressed:
-                                          () => _editParticipante(player),
-                                      tooltip: 'Editar nombre',
-                                    ),
-                                    IconButton(
-                                      icon: Icon(
-                                        Icons.close_rounded,
-                                        color: colorScheme.error,
-                                      ),
-                                      onPressed:
-                                          () =>
-                                              _removeParticipante(player.name),
-                                      tooltip: 'Eliminar',
-                                    ),
-                                  ],
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                tileColor: Colors.transparent,
-                              );
-                            },
-                          ),
-                        ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    maxLength: _maxNombreLength,
-                    decoration: InputDecoration(
-                      labelText: 'Agregar participante',
-                      counterText: '', // Ocultar contador
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      filled: true,
-                      fillColor: colorScheme.surfaceContainerHighest.withValues(
-                        alpha: 0.08,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                      hintText: 'Ej: JUAN PÉREZ',
-                    ),
-                    onChanged: (value) {
-                      // Solo rebuild cuando sea necesario
-                      if (mounted) {
-                        setState(() {});
-                      }
-                    },
-                    onSubmitted: (_) => _addParticipante(),
-                    inputFormatters: [
-                      UpperCaseTextFormatter(),
-                      LengthLimitingTextInputFormatter(_maxNombreLength),
-                      FilteringTextInputFormatter.allow(
-                        RegExp(r'[A-ZÁÉÍÓÚÑÜ\s]'),
-                      ),
-                    ],
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: _addParticipante,
-                  style: FilledButton.styleFrom(
-                    shape: const CircleBorder(),
-                    padding: const EdgeInsets.all(14),
-                  ),
-                  child: const Icon(Icons.add, size: 24),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            // Botón de partida rápida
-            FilledButton.icon(
-              icon: const Icon(Icons.play_arrow, size: 28),
-              label: const Text(
-                'Partida Rápida',
-                style: TextStyle(fontSize: 18),
-              ),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(double.infinity, 56),
-                textStyle: const TextStyle(fontWeight: FontWeight.w500),
-                backgroundColor: colorScheme.primary,
-              ),
-              onPressed: participantes.length >= 2 ? _startQuickGame : null,
-            ),
-            const SizedBox(height: 12),
-            // Botón de torneo
-            OutlinedButton.icon(
-              icon: Icon(
-                Icons.emoji_events,
-                size: 28,
-                color: colorScheme.primary,
-              ),
-              label: Text(
-                'Modo Torneo',
-                style: TextStyle(
-                  fontSize: 18,
-                  color: colorScheme.primary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 56),
-                side: BorderSide(color: colorScheme.primary, width: 2),
-                foregroundColor: colorScheme.primary,
-              ),
-              onPressed: participantes.length >= 2 ? _startTournament : null,
-            ),
-            const SizedBox(height: 16),
-          ],
+          ),
         ),
       ),
+      body: SafeArea(
+        bottom: false,
+        child: RefreshIndicator(
+          color: colorScheme.primary,
+          onRefresh: () async {
+            await Future.delayed(const Duration(milliseconds: 500));
+            if (mounted) setState(() {});
+          },
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final bool isWide = constraints.maxWidth >= 750;
+              final double columnSpacing = 16;
+              final EdgeInsets contentPadding = EdgeInsets.symmetric(
+                horizontal: isWide ? 26 : 18,
+                vertical: isWide ? 18 : 16,
+              );
+
+              final List<Widget> headerArea = [
+                _buildHeader(colorScheme, textTheme),
+                const SizedBox(height: 16),
+              ];
+
+              final Widget modeCard = _buildModeSelector(
+                colorScheme,
+                textTheme,
+              );
+              final Widget addCard = _buildAddParticipantCard(
+                colorScheme,
+                textTheme,
+              );
+              final Widget participantsColumn = _buildParticipantsManager(
+                colorScheme,
+                textTheme,
+                isWide,
+              );
+
+              return SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: contentPadding,
+                child:
+                    isWide
+                        ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 5,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  ...headerArea,
+                                  const SizedBox(height: 18),
+                                  modeCard,
+                                  const SizedBox(height: 14),
+                                  addCard,
+                                ],
+                              ),
+                            ),
+                            SizedBox(width: columnSpacing),
+                            Expanded(
+                              flex: 7,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  participantsColumn,
+                                  const SizedBox(height: 24),
+                                  _buildActionBar(colorScheme, textTheme, true),
+                                ],
+                              ),
+                            ),
+                          ],
+                        )
+                        : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            ...headerArea,
+                            const SizedBox(height: 16),
+                            modeCard,
+                            const SizedBox(height: 14),
+                            addCard,
+                            const SizedBox(height: 18),
+                            participantsColumn,
+                            SizedBox(height: mediaQuery.padding.bottom + 28),
+                          ],
+                        ),
+              );
+            },
+          ),
+        ),
+      ),
+      bottomNavigationBar:
+          MediaQuery.of(context).size.width < 750
+              ? SafeArea(
+                minimum: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                child: _buildActionBar(colorScheme, textTheme, false),
+              )
+              : null,
+    );
+  }
+
+  Widget _buildHeader(ColorScheme colorScheme, TextTheme textTheme) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Configura tu partida',
+            style: textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Define modalidad, agrega participantes y comienza a jugar en segundos.',
+            style: textTheme.bodyMedium?.copyWith(color: colorScheme.outline),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeSelector(ColorScheme colorScheme, TextTheme textTheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        color: Colors.white,
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          Text(
+            'Modalidad de puntos',
+            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            children: [
+              _buildModeChip(7, textTheme, colorScheme),
+              _buildModeChip(11, textTheme, colorScheme),
+              _buildModeChip(21, textTheme, colorScheme),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddParticipantCard(
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        color: Colors.white,
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              maxLength: _maxNombreLength,
+              decoration: const InputDecoration(
+                labelText: 'Agregar participante',
+                hintText: 'Ej: JUAN PÉREZ',
+                counterText: '',
+              ),
+              onSubmitted: (_) => _addParticipante(),
+              inputFormatters: [
+                UpperCaseTextFormatter(),
+                LengthLimitingTextInputFormatter(_maxNombreLength),
+                FilteringTextInputFormatter.allow(RegExp(r'[A-ZÁÉÍÓÚÑÜ\s]')),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          FilledButton(
+            onPressed: _addParticipante,
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.all(14),
+              shape: const CircleBorder(),
+            ),
+            child: const Icon(Icons.add_rounded, size: 22),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _initialsFor(String name) {
+    return name
+        .split(' ')
+        .where((segment) => segment.isNotEmpty)
+        .take(2)
+        .map((segment) => segment.substring(0, 1))
+        .join()
+        .toUpperCase();
+  }
+
+  Widget _buildParticipantsManager(
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+    bool isWide,
+  ) {
+    final List<Player> filtered =
+        _searchTerm.isEmpty
+            ? List<Player>.from(participantes)
+            : participantes.where((p) => p.name.contains(_searchTerm)).toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        color: Colors.white,
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Participantes (${participantes.length}/$_maxParticipantes)',
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Ordenar por nombre',
+                icon: const Icon(Icons.sort_by_alpha_rounded),
+                onPressed:
+                    participantes.isEmpty
+                        ? null
+                        : () {
+                          setState(() {
+                            participantes.sort(
+                              (a, b) => a.name.compareTo(b.name),
+                            );
+                          });
+                        },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildSearchField(colorScheme, textTheme),
+          const SizedBox(height: 14),
+          if (filtered.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.search_off_rounded,
+                    size: 36,
+                    color: colorScheme.outline,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _searchTerm.isEmpty
+                        ? 'Agrega participantes para comenzar'
+                        : 'No encontramos coincidencias para "$_searchTerm"',
+                    textAlign: TextAlign.center,
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.outline,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final double availableWidth = constraints.maxWidth;
+                final int columns =
+                    isWide
+                        ? math.max(2, math.min(3, availableWidth ~/ 220))
+                        : (availableWidth > 360 ? 2 : 1);
+                final double spacing = 12;
+                final double chipWidth =
+                    columns == 1
+                        ? availableWidth
+                        : (availableWidth - (spacing * (columns - 1))) /
+                            columns;
+
+                return Wrap(
+                  spacing: spacing,
+                  runSpacing: spacing,
+                  children: [
+                    for (final player in filtered)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minWidth: 160,
+                          maxWidth: chipWidth,
+                        ),
+                        child: _participantChip(
+                          player: player,
+                          colorScheme: colorScheme,
+                          textTheme: textTheme,
+                          onEdit: () => _editParticipante(player),
+                          onDelete: () => _removeParticipante(player.name),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeChip(
+    int value,
+    TextTheme textTheme,
+    ColorScheme colorScheme,
+  ) {
+    final isSelected = modalidad == value;
+    return ChoiceChip(
+      label: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Text(
+          value.toString(),
+          style: textTheme.bodyLarge?.copyWith(
+            fontWeight: FontWeight.w500,
+            color: isSelected ? colorScheme.primary : colorScheme.onSurface,
+          ),
+        ),
+      ),
+      selected: isSelected,
+      onSelected: (_) => setState(() => modalidad = value),
+      backgroundColor: colorScheme.surfaceContainerHighest.withValues(
+        alpha: 0.45,
+      ),
+      selectedColor: colorScheme.primary.withValues(alpha: 0.18),
+      side: BorderSide(
+        color:
+            isSelected
+                ? colorScheme.primary
+                : colorScheme.outlineVariant.withValues(alpha: 0.6),
+        width: isSelected ? 1.4 : 1.0,
+      ),
+      showCheckmark: false,
+    );
+  }
+
+  Widget _buildSearchField(ColorScheme colorScheme, TextTheme textTheme) {
+    return TextField(
+      controller: _searchController,
+      onChanged: (value) {
+        setState(() {
+          _searchTerm = value.trim().toUpperCase();
+        });
+      },
+      decoration: InputDecoration(
+        labelText: 'Buscar participante',
+        hintText: 'Ej: LUIS GARCÍA',
+        prefixIcon: Icon(Icons.search_rounded, color: colorScheme.outline),
+        suffixIcon:
+            _searchTerm.isNotEmpty
+                ? IconButton(
+                  tooltip: 'Limpiar',
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _searchTerm = '');
+                  },
+                )
+                : null,
+      ),
+    );
+  }
+
+  Widget _participantChip({
+    required Player player,
+    required ColorScheme colorScheme,
+    required TextTheme textTheme,
+    required VoidCallback onEdit,
+    required VoidCallback onDelete,
+  }) {
+    return Material(
+      color: colorScheme.surface,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onEdit,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: colorScheme.primary.withValues(alpha: 0.12),
+                child: Text(
+                  _initialsFor(player.name),
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: colorScheme.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  player.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 20),
+                color: colorScheme.primary,
+                splashRadius: 20,
+                tooltip: 'Editar nombre',
+                onPressed: onEdit,
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 20),
+                color: colorScheme.error,
+                splashRadius: 20,
+                tooltip: 'Eliminar',
+                onPressed: onDelete,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionBar(
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+    bool isWide,
+  ) {
+    return Row(
+      children: [
+        Expanded(
+          child: FilledButton.icon(
+            icon: const Icon(Icons.play_arrow_rounded, size: 22),
+            label: const Text('Partida rápida'),
+            onPressed: participantes.length >= 2 ? _startQuickGame : null,
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              textStyle: textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+              elevation: isWide ? 0 : null,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.emoji_events_outlined, size: 22),
+            label: const Text('Modo torneo'),
+            onPressed: participantes.length >= 2 ? _startTournament : null,
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              textStyle: textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+              side: BorderSide(
+                color: colorScheme.primary.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -16,20 +16,10 @@ class SoundService {
     _isEnabled = prefs.getBool('sound_enabled') ?? true;
     _volume = prefs.getDouble('sound_volume') ?? 0.5;
 
-    // Todos los sonidos desactivados para evitar errores
-  }
-
-  // Pre-cargar un sonido
-  Future<void> _preloadSound(String key, String assetPath) async {
-    try {
-      final player = AudioPlayer();
-      await player.setVolume(_volume);
-      await player.setSource(AssetSource(assetPath));
-      _players[key] = player;
-    } catch (e) {
-      print('🔇 Failed to preload sound $key: $e');
-      // No agregar el player si falla la precarga
-    }
+    // Precargar efectos principales para reducir latencia
+    await _preloadSound('win');
+    await _preloadSound('matchpoint');
+    await _preloadSound('finisher');
   }
 
   // Habilitar/Deshabilitar sonido
@@ -77,19 +67,43 @@ class SoundService {
     }
   }
 
-  // Reproducir victoria (DESACTIVADO)
+  // Reproducir victoria
   Future<void> playWin() async {
-    // Sonido desactivado para evitar errores
+    if (!_isEnabled) return;
+
+    try {
+      final player = AudioPlayer();
+      await player.setVolume(_volume);
+      await player.play(AssetSource('win.mp3'));
+    } catch (e) {
+      print('🔇 Error playing win sound (ignored): $e');
+    }
   }
 
-  // Reproducir match point (DESACTIVADO)
+  // Reproducir match point
   Future<void> playMatchPoint() async {
-    // Sonido desactivado para evitar errores
+    if (!_isEnabled) return;
+
+    try {
+      final player = AudioPlayer();
+      await player.setVolume(_volume);
+      await player.play(AssetSource('matchpoint.mp3'));
+    } catch (e) {
+      print('🔇 Error playing matchpoint sound (ignored): $e');
+    }
   }
 
-  // Reproducir finisher (DESACTIVADO)
+  // Reproducir finisher
   Future<void> playFinisher() async {
-    // Sonido desactivado para evitar errores
+    if (!_isEnabled) return;
+
+    try {
+      final player = AudioPlayer();
+      await player.setVolume(_volume);
+      await player.play(AssetSource('finisher.mp3'));
+    } catch (e) {
+      print('🔇 Error playing finisher sound (ignored): $e');
+    }
   }
 
   // Reproducir incremento de score (DESACTIVADO)
@@ -128,5 +142,17 @@ class SoundService {
       player.dispose();
     }
     _players.clear();
+  }
+
+  Future<void> _preloadSound(String key) async {
+    if (_players.containsKey(key)) return;
+    try {
+      final player = AudioPlayer();
+      await player.setVolume(_volume);
+      await player.setSource(AssetSource('$key.mp3'));
+      _players[key] = player;
+    } catch (e) {
+      // Ignorar fallos de precarga
+    }
   }
 }

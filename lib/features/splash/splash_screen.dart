@@ -193,6 +193,7 @@ class _SplashScreenState extends State<SplashScreen>
             Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   // Logo elegante con efecto de pulso
                   AnimatedBuilder(

@@ -36,61 +36,127 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Configuración'), centerTitle: true),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Sección de Sonido
-          _buildSectionHeader('Sonido y Vibración', Icons.volume_up),
-          const SizedBox(height: 8),
-          _buildSoundSettings(colorScheme),
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        title: Text(
+          'Preferencias',
+          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+        ),
+      ),
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFF3F4FF), Color(0xFFF9FAFD)],
+          ),
+        ),
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+            children: [
+              Text(
+                'Personaliza la experiencia y ajusta los detalles de audio, vibración y datos.',
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.outline,
+                ),
+              ),
+              const SizedBox(height: 18),
 
-          const SizedBox(height: 32),
+              // Sección de Sonido
+              _buildSectionHeader('Sonido y vibración', Icons.volume_up),
+              _buildSoundSettings(colorScheme),
 
-          // Sección de Datos
-          _buildSectionHeader('Datos y Estadísticas', Icons.storage),
-          const SizedBox(height: 8),
-          _buildDataSettings(colorScheme),
+              const SizedBox(height: 28),
 
-          const SizedBox(height: 32),
+              // Sección de Datos
+              _buildSectionHeader('Datos y estadísticas', Icons.folder_open),
+              _buildDataSettings(colorScheme),
 
-          // Sección de Acerca de
-          _buildSectionHeader('Acerca de', Icons.info_outline),
-          const SizedBox(height: 8),
-          _buildAboutSettings(colorScheme),
-        ],
+              const SizedBox(height: 28),
+
+              // Sección de Acerca de
+              _buildSectionHeader('Acerca de la app', Icons.info_outline),
+              _buildAboutSettings(colorScheme),
+            ],
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildSectionHeader(String title, IconData icon) {
-    return Row(
-      children: [
-        Icon(icon, size: 24),
-        const SizedBox(width: 12),
-        Text(
-          title,
-          style: Theme.of(
-            context,
-          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w500),
-        ),
-      ],
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            padding: const EdgeInsets.all(12),
+            child: Icon(icon, color: colorScheme.primary, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              title,
+              style: textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.1,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildSoundSettings(ColorScheme colorScheme) {
-    return Container(
+    final textTheme = Theme.of(context).textTheme;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(26),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            colorScheme.surfaceContainerHigh.withValues(alpha: 0.4),
+          ],
+        ),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
         children: [
           SwitchListTile(
-            title: const Text('Efectos de Sonido'),
-            subtitle: const Text('Reproducir sonidos durante el juego'),
+            title: Text('Efectos de sonido', style: textTheme.titleSmall),
+            subtitle: Text(
+              'Reproduce sonidos suaves durante el juego',
+              style: textTheme.bodySmall?.copyWith(color: colorScheme.outline),
+            ),
             value: _soundEnabled,
             onChanged: (value) async {
               setState(() => _soundEnabled = value);
@@ -99,21 +165,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 await _soundService.playClick();
               }
             },
-            secondary: const Icon(Icons.music_note),
+            secondary: Icon(
+              Icons.music_note_rounded,
+              color: colorScheme.primary,
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20),
           ),
           if (_soundEnabled) ...[
             Divider(
               height: 1,
-              color: colorScheme.outline.withValues(alpha: 0.2),
+              thickness: 0.6,
+              color: colorScheme.outlineVariant.withValues(alpha: 0.4),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.volume_down, size: 20),
+                      Icon(
+                        Icons.volume_down_rounded,
+                        size: 20,
+                        color: colorScheme.outline,
+                      ),
                       Expanded(
                         child: Slider(
                           value: _soundVolume,
@@ -130,23 +205,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           },
                         ),
                       ),
-                      const Icon(Icons.volume_up, size: 20),
+                      Icon(
+                        Icons.volume_up_rounded,
+                        size: 20,
+                        color: colorScheme.primary,
+                      ),
                     ],
                   ),
                   Text(
                     'Volumen: ${(_soundVolume * 100).round()}%',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: colorScheme.outline),
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.outline,
+                    ),
                   ),
                 ],
               ),
             ),
           ],
-          Divider(height: 1, color: colorScheme.outline.withValues(alpha: 0.2)),
+          Divider(
+            height: 1,
+            thickness: 0.6,
+            color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+          ),
           SwitchListTile(
-            title: const Text('Vibración Háptica'),
-            subtitle: const Text('Vibrar durante las interacciones'),
+            title: Text('Vibración háptica', style: textTheme.titleSmall),
+            subtitle: Text(
+              'Un toque sutil acompaña cada interacción',
+              style: textTheme.bodySmall?.copyWith(color: colorScheme.outline),
+            ),
             value: _hapticEnabled,
             onChanged: (value) async {
               setState(() => _hapticEnabled = value);
@@ -155,7 +241,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 await _hapticService.medium();
               }
             },
-            secondary: const Icon(Icons.vibration),
+            secondary: Icon(
+              Icons.vibration_rounded,
+              color: colorScheme.secondary,
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20),
           ),
         ],
       ),
@@ -163,26 +253,80 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildDataSettings(ColorScheme colorScheme) {
-    return Container(
+    final textTheme = Theme.of(context).textTheme;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            colorScheme.surfaceContainerHigh.withValues(alpha: 0.5),
+          ],
+        ),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.45),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Column(
         children: [
           ListTile(
-            leading: const Icon(Icons.delete_sweep),
-            title: const Text('Borrar Estadísticas'),
-            subtitle: const Text('Eliminar todas las estadísticas guardadas'),
-            trailing: const Icon(Icons.chevron_right),
+            leading: Container(
+              decoration: BoxDecoration(
+                color: colorScheme.error.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.all(10),
+              child: Icon(
+                Icons.delete_sweep_outlined,
+                color: colorScheme.error,
+              ),
+            ),
+            title: Text('Borrar estadísticas', style: textTheme.titleSmall),
+            subtitle: Text(
+              'Eliminar todas las estadísticas guardadas',
+              style: textTheme.bodySmall?.copyWith(color: colorScheme.outline),
+            ),
+            trailing: Icon(
+              Icons.chevron_right_rounded,
+              color: colorScheme.outline,
+            ),
             onTap: () => _showResetStatsDialog(context),
           ),
-          Divider(height: 1, color: colorScheme.outline.withValues(alpha: 0.2)),
+          Divider(
+            height: 1,
+            thickness: 0.6,
+            color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+          ),
           ListTile(
-            leading: const Icon(Icons.backup),
-            title: const Text('Exportar Datos'),
-            subtitle: const Text('Guardar estadísticas en un archivo'),
-            trailing: const Icon(Icons.chevron_right),
+            leading: Container(
+              decoration: BoxDecoration(
+                color: colorScheme.secondary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.all(10),
+              child: Icon(Icons.backup_outlined, color: colorScheme.secondary),
+            ),
+            title: Text('Exportar datos', style: textTheme.titleSmall),
+            subtitle: Text(
+              'Guarda las estadísticas en un archivo',
+              style: textTheme.bodySmall?.copyWith(color: colorScheme.outline),
+            ),
+            trailing: Icon(
+              Icons.chevron_right_rounded,
+              color: colorScheme.outline,
+            ),
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -198,33 +342,95 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildAboutSettings(ColorScheme colorScheme) {
-    return Container(
+    final textTheme = Theme.of(context).textTheme;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            colorScheme.surfaceContainerHigh.withValues(alpha: 0.4),
+          ],
+        ),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.45),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Column(
         children: [
           ListTile(
-            leading: const Icon(Icons.info),
-            title: const Text('Versión'),
-            subtitle: const Text('1.0.0'),
+            leading: Container(
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.all(10),
+              child: Icon(Icons.info_outline, color: colorScheme.primary),
+            ),
+            title: Text('Versión', style: textTheme.titleSmall),
+            subtitle: Text(
+              '1.0.0',
+              style: textTheme.bodySmall?.copyWith(color: colorScheme.outline),
+            ),
           ),
-          Divider(height: 1, color: colorScheme.outline.withValues(alpha: 0.2)),
-          ListTile(
-            leading: const Icon(Icons.code),
-            title: const Text('Desarrollador'),
-            subtitle: const Text('Designed with ❤️ by Magin'),
+          Divider(
+            height: 1,
+            thickness: 0.6,
+            color: colorScheme.outlineVariant.withValues(alpha: 0.4),
           ),
-          Divider(height: 1, color: colorScheme.outline.withValues(alpha: 0.2)),
           ListTile(
-            leading: const Icon(Icons.bug_report),
-            title: const Text('Reportar un Error'),
-            trailing: const Icon(Icons.chevron_right),
+            leading: Container(
+              decoration: BoxDecoration(
+                color: colorScheme.secondary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.all(10),
+              child: Icon(Icons.code_rounded, color: colorScheme.secondary),
+            ),
+            title: Text('Desarrollador', style: textTheme.titleSmall),
+            subtitle: Text(
+              'Designed by DevMagin',
+              style: textTheme.bodySmall?.copyWith(color: colorScheme.outline),
+            ),
+          ),
+          Divider(
+            height: 1,
+            thickness: 0.6,
+            color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+          ListTile(
+            leading: Container(
+              decoration: BoxDecoration(
+                color: colorScheme.tertiary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.all(10),
+              child: Icon(
+                Icons.bug_report_outlined,
+                color: colorScheme.tertiary,
+              ),
+            ),
+            title: Text('Reportar un error', style: textTheme.titleSmall),
+            trailing: Icon(
+              Icons.chevron_right_rounded,
+              color: colorScheme.outline,
+            ),
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Contacto: tu-email@example.com'),
+                  content: Text('Contacto: maginluna@gmail.com'),
                   duration: Duration(seconds: 3),
                 ),
               );

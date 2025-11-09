@@ -5,6 +5,7 @@ enum TournamentType {
   singleElimination, // Eliminación simple
   doubleElimination, // Doble eliminación
   roundRobin, // Todos contra todos
+  groupStage, // Fase de grupos + eliminación
 }
 
 enum MatchStatus {
@@ -25,6 +26,12 @@ class Tournament extends Equatable {
   final Player? winner;
   final bool isActive;
 
+  // Propiedades específicas para fase de grupos
+  final int? numberOfGroups;
+  final int? playersPerGroup;
+  final int? playersAdvancingPerGroup;
+  final bool? groupStageCompleted;
+
   const Tournament({
     required this.id,
     required this.name,
@@ -36,6 +43,10 @@ class Tournament extends Equatable {
     this.completedAt,
     this.winner,
     this.isActive = true,
+    this.numberOfGroups,
+    this.playersPerGroup,
+    this.playersAdvancingPerGroup,
+    this.groupStageCompleted = false,
   });
 
   // Obtener el round actual
@@ -55,10 +66,14 @@ class Tournament extends Equatable {
 
   // Obtener progreso del torneo (0.0 - 1.0)
   double get progress {
-    if (matches.isEmpty) return 0.0;
+    final playableMatches =
+        matches.where((m) => m.player1 != null && m.player2 != null).toList();
+    if (playableMatches.isEmpty) {
+      return isCompleted ? 1.0 : 0.0;
+    }
     final completed =
-        matches.where((m) => m.status == MatchStatus.completed).length;
-    return completed / matches.length;
+        playableMatches.where((m) => m.status == MatchStatus.completed).length;
+    return completed / playableMatches.length;
   }
 
   // Verificar si el torneo está completo
@@ -75,6 +90,10 @@ class Tournament extends Equatable {
     DateTime? completedAt,
     Player? winner,
     bool? isActive,
+    int? numberOfGroups,
+    int? playersPerGroup,
+    int? playersAdvancingPerGroup,
+    bool? groupStageCompleted,
   }) {
     return Tournament(
       id: id ?? this.id,
@@ -87,6 +106,11 @@ class Tournament extends Equatable {
       completedAt: completedAt ?? this.completedAt,
       winner: winner ?? this.winner,
       isActive: isActive ?? this.isActive,
+      numberOfGroups: numberOfGroups ?? this.numberOfGroups,
+      playersPerGroup: playersPerGroup ?? this.playersPerGroup,
+      playersAdvancingPerGroup:
+          playersAdvancingPerGroup ?? this.playersAdvancingPerGroup,
+      groupStageCompleted: groupStageCompleted ?? this.groupStageCompleted,
     );
   }
 
@@ -94,18 +118,18 @@ class Tournament extends Equatable {
     return {
       'id': id,
       'name': name,
-      'players':
-          players.map((p) => {'name': p.name, 'avatarId': p.avatarId}).toList(),
+      'players': players.map((p) => {'name': p.name}).toList(),
       'type': type.name,
       'pointsToWin': pointsToWin,
       'matches': matches.map((m) => m.toJson()).toList(),
       'createdAt': createdAt.toIso8601String(),
       'completedAt': completedAt?.toIso8601String(),
-      'winner':
-          winner != null
-              ? {'name': winner!.name, 'avatarId': winner!.avatarId}
-              : null,
+      'winner': winner != null ? {'name': winner!.name} : null,
       'isActive': isActive,
+      'numberOfGroups': numberOfGroups,
+      'playersPerGroup': playersPerGroup,
+      'playersAdvancingPerGroup': playersAdvancingPerGroup,
+      'groupStageCompleted': groupStageCompleted,
     };
   }
 
@@ -116,10 +140,8 @@ class Tournament extends Equatable {
       players:
           (json['players'] as List)
               .map(
-                (p) => Player(
-                  name: p['name'] as String,
-                  avatarId: p['avatarId'] as String,
-                ),
+                (p) =>
+                    Player(name: (p as Map<String, dynamic>)['name'] as String),
               )
               .toList(),
       type: TournamentType.values.firstWhere((t) => t.name == json['type']),
@@ -136,11 +158,15 @@ class Tournament extends Equatable {
       winner:
           json['winner'] != null
               ? Player(
-                name: json['winner']['name'] as String,
-                avatarId: json['winner']['avatarId'] as String,
+                name:
+                    (json['winner'] as Map<String, dynamic>)['name'] as String,
               )
               : null,
       isActive: json['isActive'] as bool? ?? true,
+      numberOfGroups: json['numberOfGroups'] as int?,
+      playersPerGroup: json['playersPerGroup'] as int?,
+      playersAdvancingPerGroup: json['playersAdvancingPerGroup'] as int?,
+      groupStageCompleted: json['groupStageCompleted'] as bool? ?? false,
     );
   }
 
@@ -156,6 +182,10 @@ class Tournament extends Equatable {
     completedAt,
     winner,
     isActive,
+    numberOfGroups,
+    playersPerGroup,
+    playersAdvancingPerGroup,
+    groupStageCompleted,
   ];
 }
 
@@ -171,6 +201,11 @@ class TournamentMatch extends Equatable {
   final Player? winner;
   final String? nextMatchId; // ID del siguiente partido si gana
 
+  // Propiedades para fase de grupos
+  final String? groupId; // ID del grupo (ej: "A", "B", "elimination")
+  final bool?
+  isGroupStage; // true si es fase de grupos, false si es eliminación
+
   const TournamentMatch({
     required this.id,
     this.player1,
@@ -182,6 +217,8 @@ class TournamentMatch extends Equatable {
     required this.matchNumber,
     this.winner,
     this.nextMatchId,
+    this.groupId,
+    this.isGroupStage,
   });
 
   TournamentMatch copyWith({
@@ -195,6 +232,8 @@ class TournamentMatch extends Equatable {
     int? matchNumber,
     Player? winner,
     String? nextMatchId,
+    String? groupId,
+    bool? isGroupStage,
   }) {
     return TournamentMatch(
       id: id ?? this.id,
@@ -207,30 +246,25 @@ class TournamentMatch extends Equatable {
       matchNumber: matchNumber ?? this.matchNumber,
       winner: winner ?? this.winner,
       nextMatchId: nextMatchId ?? this.nextMatchId,
+      groupId: groupId ?? this.groupId,
+      isGroupStage: isGroupStage ?? this.isGroupStage,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'player1':
-          player1 != null
-              ? {'name': player1!.name, 'avatarId': player1!.avatarId}
-              : null,
-      'player2':
-          player2 != null
-              ? {'name': player2!.name, 'avatarId': player2!.avatarId}
-              : null,
+      'player1': player1 != null ? {'name': player1!.name} : null,
+      'player2': player2 != null ? {'name': player2!.name} : null,
       'score1': score1,
       'score2': score2,
       'status': status.name,
       'round': round,
       'matchNumber': matchNumber,
-      'winner':
-          winner != null
-              ? {'name': winner!.name, 'avatarId': winner!.avatarId}
-              : null,
+      'winner': winner != null ? {'name': winner!.name} : null,
       'nextMatchId': nextMatchId,
+      'groupId': groupId,
+      'isGroupStage': isGroupStage,
     };
   }
 
@@ -240,15 +274,15 @@ class TournamentMatch extends Equatable {
       player1:
           json['player1'] != null
               ? Player(
-                name: json['player1']['name'] as String,
-                avatarId: json['player1']['avatarId'] as String,
+                name:
+                    (json['player1'] as Map<String, dynamic>)['name'] as String,
               )
               : null,
       player2:
           json['player2'] != null
               ? Player(
-                name: json['player2']['name'] as String,
-                avatarId: json['player2']['avatarId'] as String,
+                name:
+                    (json['player2'] as Map<String, dynamic>)['name'] as String,
               )
               : null,
       score1: json['score1'] as int?,
@@ -259,11 +293,13 @@ class TournamentMatch extends Equatable {
       winner:
           json['winner'] != null
               ? Player(
-                name: json['winner']['name'] as String,
-                avatarId: json['winner']['avatarId'] as String,
+                name:
+                    (json['winner'] as Map<String, dynamic>)['name'] as String,
               )
               : null,
       nextMatchId: json['nextMatchId'] as String?,
+      groupId: json['groupId'] as String?,
+      isGroupStage: json['isGroupStage'] as bool?,
     );
   }
 
@@ -279,7 +315,7 @@ class TournamentMatch extends Equatable {
     matchNumber,
     winner,
     nextMatchId,
+    groupId,
+    isGroupStage,
   ];
 }
-
-
