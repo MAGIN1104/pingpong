@@ -6,7 +6,6 @@ class SoundService {
   factory SoundService() => _instance;
   SoundService._internal();
 
-  final Map<String, AudioPlayer> _players = {};
   bool _isEnabled = true;
   double _volume = 0.5;
 
@@ -15,11 +14,7 @@ class SoundService {
     final prefs = await SharedPreferences.getInstance();
     _isEnabled = prefs.getBool('sound_enabled') ?? true;
     _volume = prefs.getDouble('sound_volume') ?? 0.5;
-
-    // Precargar efectos principales para reducir latencia
-    await _preloadSound('win');
-    await _preloadSound('matchpoint');
-    await _preloadSound('finisher');
+    // No precargamos para evitar problemas con rutas - se cargarán bajo demanda
   }
 
   // Habilitar/Deshabilitar sonido
@@ -34,11 +29,6 @@ class SoundService {
     _volume = volume;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('sound_volume', volume);
-
-    // Actualizar volumen de todos los players
-    for (var player in _players.values) {
-      player.setVolume(volume);
-    }
   }
 
   bool get isEnabled => _isEnabled;
@@ -49,18 +39,12 @@ class SoundService {
     if (!_isEnabled) return;
 
     try {
-      final player = _players[soundKey];
-      if (player != null) {
-        await player.stop();
-        await player.seek(Duration.zero);
-        await player.resume();
-      } else {
-        // Si no está pre-cargado, crear uno nuevo
-        final newPlayer = AudioPlayer();
-        await newPlayer.setVolume(_volume);
-        await newPlayer.setSource(AssetSource('$soundKey.mp3'));
-        await newPlayer.resume();
-      }
+      // Crear un nuevo player para cada reproducción para evitar problemas de estado
+      final player = AudioPlayer();
+      await player.setVolume(_volume);
+      // AssetSource usa la ruta relativa desde la carpeta assets (sin el prefijo assets/)
+      await player.play(AssetSource('$soundKey.mp3'));
+      // El player se liberará automáticamente cuando termine de reproducir
     } catch (e) {
       // Ignorar errores de reproducción - no deben bloquear la app
       print('🔇 Sound error (ignored): $e');
@@ -72,9 +56,7 @@ class SoundService {
     if (!_isEnabled) return;
 
     try {
-      final player = AudioPlayer();
-      await player.setVolume(_volume);
-      await player.play(AssetSource('win.mp3'));
+      await play('win');
     } catch (e) {
       print('🔇 Error playing win sound (ignored): $e');
     }
@@ -85,9 +67,7 @@ class SoundService {
     if (!_isEnabled) return;
 
     try {
-      final player = AudioPlayer();
-      await player.setVolume(_volume);
-      await player.play(AssetSource('matchpoint.mp3'));
+      await play('matchpoint');
     } catch (e) {
       print('🔇 Error playing matchpoint sound (ignored): $e');
     }
@@ -98,9 +78,7 @@ class SoundService {
     if (!_isEnabled) return;
 
     try {
-      final player = AudioPlayer();
-      await player.setVolume(_volume);
-      await player.play(AssetSource('finisher.mp3'));
+      await play('finisher');
     } catch (e) {
       print('🔇 Error playing finisher sound (ignored): $e');
     }
@@ -136,23 +114,8 @@ class SoundService {
     // Sonido desactivado para evitar errores
   }
 
-  // Liberar recursos
+  // Liberar recursos (no necesario ya que creamos players temporales)
   void dispose() {
-    for (var player in _players.values) {
-      player.dispose();
-    }
-    _players.clear();
-  }
-
-  Future<void> _preloadSound(String key) async {
-    if (_players.containsKey(key)) return;
-    try {
-      final player = AudioPlayer();
-      await player.setVolume(_volume);
-      await player.setSource(AssetSource('$key.mp3'));
-      _players[key] = player;
-    } catch (e) {
-      // Ignorar fallos de precarga
-    }
+    // Los players se liberan automáticamente cuando terminan de reproducir
   }
 }

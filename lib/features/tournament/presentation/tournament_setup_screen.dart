@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../../../core/services/player_color_service.dart';
 import '../data/tournament_service.dart';
 import '../domain/entities/tournament.dart';
 import '../../game/domain/entities/player.dart';
@@ -16,6 +17,7 @@ class TournamentSetupScreen extends StatefulWidget {
 
 class _TournamentSetupScreenState extends State<TournamentSetupScreen> {
   final _tournamentService = TournamentService();
+  final _colorService = PlayerColorService();
   final _nameController = TextEditingController(text: 'Torneo de Ping Pong');
 
   List<Player> _selectedPlayers = [];
@@ -34,6 +36,7 @@ class _TournamentSetupScreenState extends State<TournamentSetupScreen> {
     super.initState();
     // Pre-seleccionar todos los jugadores disponibles
     _selectedPlayers = List.from(widget.availablePlayers);
+    _colorService.init();
   }
 
   @override
@@ -85,7 +88,7 @@ class _TournamentSetupScreenState extends State<TournamentSetupScreen> {
               : null,
     );
 
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => TournamentBracketScreen(tournament: tournament),
@@ -339,23 +342,112 @@ class _TournamentSetupScreenState extends State<TournamentSetupScreen> {
       });
     }
 
-    return Column(
-      children: [
-        for (int i = 0; i < steps.length; i++) ...[
-          _buildStepTile(
-            colorScheme,
-            textTheme,
-            step: steps[i],
-            index: i,
-            isActive: i == clampedStep,
-            isCompleted: i < clampedStep,
+    final stepWidgets = <Step>[
+      for (int i = 0; i < steps.length; i++)
+        Step(
+          title: Text(
+            steps[i].title,
+            style: textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.1,
+              color: i == clampedStep ? steps[i].color : colorScheme.onSurface,
+            ),
           ),
-          if (i < steps.length - 1)
-            _buildStepConnector(colorScheme, isCompleted: i < clampedStep),
-        ],
-        const SizedBox(height: 16),
-        _buildStepControls(colorScheme, steps.length),
-      ],
+          subtitle:
+              steps[i].helper != null
+                  ? Text(
+                    steps[i].helper!,
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  )
+                  : null,
+          content: _buildStepContainer(colorScheme, steps[i].builder()),
+          state:
+              i < clampedStep
+                  ? StepState.complete
+                  : i == clampedStep
+                  ? StepState.editing
+                  : StepState.indexed,
+          isActive: i <= clampedStep,
+        ),
+    ];
+
+    return Stepper(
+      key: ValueKey('stepper-${stepWidgets.length}'),
+      type: StepperType.vertical,
+      currentStep: clampedStep,
+      physics: const ClampingScrollPhysics(),
+      steps: stepWidgets,
+      onStepTapped: (index) {
+        setState(() {
+          _currentStep = index;
+        });
+      },
+      onStepContinue: () {
+        final isLast = clampedStep >= stepWidgets.length - 1;
+        if (isLast) {
+          if (_selectedPlayers.length >= 2) {
+            _createTournament();
+          }
+        } else {
+          setState(() {
+            _currentStep += 1;
+          });
+        }
+      },
+      onStepCancel: () {
+        if (clampedStep > 0) {
+          setState(() {
+            _currentStep -= 1;
+          });
+        }
+      },
+      controlsBuilder: (context, details) {
+        final bool isFirst = clampedStep == 0;
+        final bool isLast = clampedStep >= stepWidgets.length - 1;
+        final bool canCreateTournament = _selectedPlayers.length >= 2;
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: isFirst ? null : details.onStepCancel,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  label: const Text('Anterior'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed:
+                      isLast && !canCreateTournament
+                          ? null
+                          : details.onStepContinue,
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  icon: Icon(
+                    isLast ? Icons.flag_rounded : Icons.arrow_forward_rounded,
+                  ),
+                  label: Text(isLast ? 'Finalizar' : 'Continuar'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -371,186 +463,6 @@ class _TournamentSetupScreenState extends State<TournamentSetupScreen> {
         ),
       ),
       child: child,
-    );
-  }
-
-  Widget _buildStepControls(ColorScheme colorScheme, int totalSteps) {
-    final bool isFirst = _currentStep == 0;
-    final bool isLast = _currentStep >= totalSteps - 1;
-    final bool canCreateTournament = _selectedPlayers.length >= 2;
-
-    return Row(
-      children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed:
-                isFirst
-                    ? null
-                    : () {
-                      setState(() {
-                        _currentStep = max(0, _currentStep - 1);
-                      });
-                    },
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-            ),
-            icon: const Icon(Icons.arrow_back_rounded),
-            label: const Text('Anterior'),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: FilledButton.icon(
-            onPressed:
-                isLast
-                    ? (canCreateTournament ? _createTournament : null)
-                    : () {
-                      setState(() {
-                        _currentStep = min(totalSteps - 1, _currentStep + 1);
-                      });
-                    },
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-            ),
-            icon: Icon(
-              isLast ? Icons.flag_rounded : Icons.arrow_forward_rounded,
-            ),
-            label: Text(isLast ? 'Finalizar' : 'Continuar'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStepTile(
-    ColorScheme colorScheme,
-    TextTheme textTheme, {
-    required _ConfigurationStep step,
-    required int index,
-    required bool isActive,
-    required bool isCompleted,
-  }) {
-    final Color indicatorBorder =
-        isActive || isCompleted ? step.color : colorScheme.outlineVariant;
-    final Color indicatorBackground =
-        isActive || isCompleted
-            ? step.color
-            : colorScheme.surfaceContainerHighest;
-    final Color indicatorIconColor =
-        isActive || isCompleted ? colorScheme.onPrimary : indicatorBorder;
-    final Color titleColor = isActive ? step.color : colorScheme.onSurface;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          onTap: () {
-            setState(() {
-              _currentStep = index;
-            });
-          },
-          borderRadius: BorderRadius.circular(18),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  height: 32,
-                  width: 32,
-                  decoration: BoxDecoration(
-                    color: indicatorBackground,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: indicatorBorder, width: 2),
-                  ),
-                  child: Center(
-                    child:
-                        isCompleted
-                            ? Icon(
-                              Icons.check,
-                              size: 18,
-                              color: indicatorIconColor,
-                            )
-                            : Icon(
-                              step.icon,
-                              size: 18,
-                              color: indicatorIconColor,
-                            ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        step.title,
-                        style: textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: titleColor,
-                          letterSpacing: -0.1,
-                        ),
-                      ),
-                      if (step.helper != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          step.helper!,
-                          style: textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurface.withValues(alpha: 0.6),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          child:
-              isActive
-                  ? Padding(
-                    key: ValueKey('step-$index-active'),
-                    padding: const EdgeInsets.only(
-                      left: 44,
-                      top: 12,
-                      bottom: 4,
-                    ),
-                    child: step.builder(),
-                  )
-                  : const SizedBox.shrink(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStepConnector(
-    ColorScheme colorScheme, {
-    required bool isCompleted,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 15),
-      child: Container(
-        width: 2,
-        height: 28,
-        decoration: BoxDecoration(
-          color:
-              isCompleted
-                  ? colorScheme.primary
-                  : colorScheme.outlineVariant.withValues(alpha: 0.4),
-        ),
-      ),
     );
   }
 
@@ -825,189 +737,234 @@ class _TournamentSetupScreenState extends State<TournamentSetupScreen> {
             : widget.availablePlayers
                 .where((p) => p.name.toUpperCase().contains(_searchTerm))
                 .toList();
-    final accentPalette = [
-      colorScheme.primaryContainer,
-      colorScheme.secondaryContainer,
-      colorScheme.tertiaryContainer,
-      const Color(0xFFEAF4FF),
-      const Color(0xFFFFF0F5),
-      const Color(0xFFE8FFF7),
-    ];
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white,
-            colorScheme.surfaceContainerHigh.withValues(alpha: 0.65),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 24,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Seleccionados: ${_selectedPlayers.length}/${widget.availablePlayers.length}',
-                  style: textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.onSurface.withValues(alpha: 0.85),
-                  ),
-                ),
-              ),
-              TextButton.icon(
-                onPressed:
-                    _selectedPlayers.length == widget.availablePlayers.length
-                        ? null
-                        : () {
-                          setState(() {
-                            _selectedPlayers = List<Player>.from(
-                              widget.availablePlayers,
-                            );
-                          });
-                        },
-                icon: const Icon(Icons.select_all_rounded, size: 18),
-                label: const Text('Todos'),
-              ),
-              TextButton.icon(
-                onPressed:
-                    _selectedPlayers.isEmpty
-                        ? null
-                        : () {
-                          setState(() {
-                            _selectedPlayers.clear();
-                          });
-                        },
-                icon: const Icon(Icons.clear_all_rounded, size: 18),
-                label: const Text('Ninguno'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              labelText: 'Buscar participante',
-              hintText: 'Ej: ANA PÉREZ',
-              prefixIcon: Icon(Icons.search, color: colorScheme.outline),
-              suffixIcon:
-                  _searchTerm.isNotEmpty
-                      ? IconButton(
-                        tooltip: 'Limpiar',
-                        icon: const Icon(Icons.close_rounded),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchTerm = '');
-                        },
-                      )
-                      : null,
+    return Card(
+      elevation: 1,
+      color: colorScheme.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final bool isCompact = constraints.maxWidth < 480;
+
+                final header = Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      height: 44,
+                      width: 44,
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Icon(
+                        Icons.group_rounded,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Selecciona participantes',
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.1,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Seleccionados: ${_selectedPlayers.length} de ${widget.availablePlayers.length}',
+                            style: textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+
+                final actions = Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilledButton.tonalIcon(
+                      onPressed:
+                          _selectedPlayers.length ==
+                                  widget.availablePlayers.length
+                              ? null
+                              : () {
+                                setState(() {
+                                  _selectedPlayers = List<Player>.from(
+                                    widget.availablePlayers,
+                                  );
+                                });
+                              },
+                      icon: const Icon(Icons.select_all_rounded, size: 18),
+                      label: const Text('Seleccionar todo'),
+                    ),
+                    FilledButton.tonalIcon(
+                      onPressed:
+                          _selectedPlayers.isEmpty
+                              ? null
+                              : () {
+                                setState(() {
+                                  _selectedPlayers.clear();
+                                });
+                              },
+                      icon: const Icon(Icons.remove_done_rounded, size: 18),
+                      label: const Text('Limpiar'),
+                    ),
+                  ],
+                );
+
+                if (isCompact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [header, const SizedBox(height: 12), actions],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: header),
+                    const SizedBox(width: 16),
+                    actions,
+                  ],
+                );
+              },
             ),
-            onChanged: (value) {
-              setState(() {
-                _searchTerm = value.trim().toUpperCase();
-              });
-            },
-          ),
-          const SizedBox(height: 16),
-          if (filteredPlayers.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.search_off_rounded,
-                    size: 36,
-                    color: colorScheme.outline,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _searchTerm.isEmpty
-                        ? 'No hay participantes disponibles'
-                        : 'Sin coincidencias para "$_searchTerm"',
-                    style: textTheme.bodyMedium?.copyWith(
+            const SizedBox(height: 20),
+            TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                labelText: 'Buscar participante',
+                hintText: 'Ej: ANA PÉREZ',
+                prefixIcon: Icon(Icons.search, color: colorScheme.outline),
+                suffixIcon:
+                    _searchTerm.isNotEmpty
+                        ? IconButton(
+                          tooltip: 'Limpiar',
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchTerm = '');
+                          },
+                        )
+                        : null,
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _searchTerm = value.trim().toUpperCase();
+                });
+              },
+            ),
+            const SizedBox(height: 20),
+            if (filteredPlayers.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.search_off_rounded,
+                      size: 36,
                       color: colorScheme.outline,
                     ),
-                  ),
-                ],
-              ),
-            )
-          else
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    for (final entry in filteredPlayers.asMap().entries)
-                      _buildColoredChip(
-                        player: entry.value,
-                        paletteColor:
-                            accentPalette[entry.key % accentPalette.length],
-                        colorScheme: colorScheme,
-                        textTheme: textTheme,
+                    const SizedBox(height: 8),
+                    Text(
+                      _searchTerm.isEmpty
+                          ? 'No hay participantes disponibles'
+                          : 'Sin coincidencias para "$_searchTerm"',
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.outline,
                       ),
+                    ),
                   ],
                 ),
-                if (_selectedPlayers.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  Text(
-                    'Participantes en el torneo',
-                    style: textTheme.labelLarge?.copyWith(
-                      color: colorScheme.onSurface.withValues(alpha: 0.7),
-                      fontWeight: FontWeight.w600,
+              )
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOut,
+                    child: Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        for (final entry in filteredPlayers.asMap().entries)
+                          _buildColoredChip(
+                            player: entry.value,
+                            paletteColor: _colorService.getColor(
+                              entry.value.name,
+                              colorScheme,
+                            ),
+                            colorScheme: colorScheme,
+                            textTheme: textTheme,
+                          ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children:
-                        _selectedPlayers
-                            .map(
-                              (player) => Chip(
-                                backgroundColor: colorScheme.primary.withValues(
-                                  alpha: 0.12,
-                                ),
-                                label: Text(
-                                  player.name,
-                                  style: textTheme.labelMedium?.copyWith(
-                                    color: colorScheme.primary,
-                                    fontWeight: FontWeight.w600,
+                  if (_selectedPlayers.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    Text(
+                      'Participantes en el torneo',
+                      style: textTheme.labelLarge?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.7),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeInOut,
+                      child: Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children:
+                            _selectedPlayers
+                                .map(
+                                  (player) => Chip(
+                                    backgroundColor:
+                                        colorScheme.primaryContainer,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    label: Text(
+                                      player.name,
+                                      style: textTheme.labelMedium?.copyWith(
+                                        color: colorScheme.onPrimaryContainer,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    deleteIconColor:
+                                        colorScheme.onPrimaryContainer,
+                                    onDeleted: () {
+                                      setState(() {
+                                        _selectedPlayers.removeWhere(
+                                          (p) => p.name == player.name,
+                                        );
+                                      });
+                                    },
                                   ),
-                                ),
-                                deleteIconColor: colorScheme.primary,
-                                onDeleted: () {
-                                  setState(() {
-                                    _selectedPlayers.removeWhere(
-                                      (p) => p.name == player.name,
-                                    );
-                                  });
-                                },
-                              ),
-                            )
-                            .toList(),
-                  ),
+                                )
+                                .toList(),
+                      ),
+                    ),
+                  ],
                 ],
-              ],
-            ),
-        ],
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1019,42 +976,40 @@ class _TournamentSetupScreenState extends State<TournamentSetupScreen> {
     required TextTheme textTheme,
   }) {
     final bool isSelected = _selectedPlayers.any((p) => p.name == player.name);
-    final Color selectedColor = colorScheme.primary;
-    final Color unselectedColor = colorScheme.surfaceContainerHighest
-        .withValues(alpha: 0.9);
+    final Color selectedColor = colorScheme.primaryContainer;
+    final Color unselectedColor = paletteColor;
     final Color borderColor =
         isSelected
             ? colorScheme.primary
-            : colorScheme.outlineVariant.withValues(alpha: 0.6);
-    final Color textColor =
-        isSelected
-            ? colorScheme.onPrimary
-            : colorScheme.onSurface.withValues(alpha: 0.8);
-    final Color checkColor = colorScheme.onPrimary;
+            : colorScheme.outlineVariant.withValues(alpha: 0.4);
 
     return FilterChip(
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       label: Text(
         player.name,
         style: textTheme.bodyMedium?.copyWith(
-          color: textColor,
+          color:
+              isSelected
+                  ? colorScheme.onPrimaryContainer
+                  : colorScheme.onSurfaceVariant,
           fontWeight: FontWeight.w600,
+          letterSpacing: 0.1,
         ),
       ),
       selected: isSelected,
-      pressElevation: 0,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      side: BorderSide(color: borderColor, width: 1.6),
-      selectedColor: selectedColor,
-      backgroundColor: unselectedColor,
       showCheckmark: true,
-      checkmarkColor: checkColor,
-      onSelected: (_) {
+      checkmarkColor: colorScheme.primary,
+      side: BorderSide(color: borderColor, width: 1.2),
+      backgroundColor: unselectedColor,
+      selectedColor: selectedColor,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      onSelected: (selected) {
         setState(() {
-          if (isSelected) {
-            _selectedPlayers.removeWhere((p) => p.name == player.name);
-          } else {
+          if (selected) {
             _selectedPlayers.add(player);
+          } else {
+            _selectedPlayers.removeWhere((p) => p.name == player.name);
           }
         });
       },

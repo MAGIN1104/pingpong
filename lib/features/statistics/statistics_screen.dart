@@ -36,7 +36,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Estadísticas'),
+        title: const Text(
+          'Estadísticas',
+          style: TextStyle(color: Colors.black),
+        ),
         centerTitle: true,
         actions: [
           IconButton(
@@ -46,10 +49,12 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           ),
         ],
       ),
-      body:
-          _allStats.isEmpty
-              ? _buildEmptyState(colorScheme)
-              : _buildStatsContent(colorScheme),
+      body: SafeArea(
+        child:
+            _allStats.isEmpty
+                ? _buildEmptyState(colorScheme)
+                : _buildStatsContent(colorScheme),
+      ),
     );
   }
 

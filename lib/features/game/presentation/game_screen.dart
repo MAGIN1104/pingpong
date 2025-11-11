@@ -500,16 +500,29 @@ class _GameScreenState extends State<GameScreen>
               context: context,
               barrierDismissible: false,
               builder: (context) => _buildTournamentWinnerDialog(winner, loser),
-            ).then((dialogResult) {
+            ).then((dialogResult) async {
               // Regresar al bracket con el resultado
               if (mounted) {
                 print('🏆 Torneo: Cerrando partido. Ganador: $winner');
-                Navigator.of(context).pop({
-                  'matchId': widget.tournamentMatchId,
-                  'winner': winner,
-                  'score1': score1,
-                  'score2': score2,
-                });
+                // Restaurar orientación a portrait antes de hacer pop para
+                // que la pantalla anterior (configuración) reciba la orientación inmediatamente.
+                try {
+                  await SystemChrome.setPreferredOrientations([
+                    DeviceOrientation.portraitUp,
+                    DeviceOrientation.portraitDown,
+                  ]);
+                } catch (e) {
+                  // Ignorar errores
+                }
+
+                if (mounted) {
+                  Navigator.of(context).pop({
+                    'matchId': widget.tournamentMatchId,
+                    'winner': winner,
+                    'score1': score1,
+                    'score2': score2,
+                  });
+                }
               }
             });
           } else {
@@ -903,29 +916,6 @@ class _GameScreenState extends State<GameScreen>
                                 ),
                               ),
                             ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 6,
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.emoji_events_rounded,
-                                    size: 18,
-                                    color: colorScheme.primary,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Punto final',
-                                    style: textTheme.labelLarge?.copyWith(
-                                      color: colorScheme.primary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
                           ),
                         ),
                       if (showMinus)
@@ -1035,78 +1025,124 @@ class _GameScreenState extends State<GameScreen>
     );
   }
 
-  Widget _buildWarmupBanner(ColorScheme colorScheme, TextTheme textTheme) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+  Widget _buildWarmupDialog(ColorScheme colorScheme, TextTheme textTheme) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 60),
       child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.8,
+          maxHeight: MediaQuery.of(context).size.height * 0.35,
+        ),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(26),
-          gradient: LinearGradient(
-            colors: [
-              colorScheme.primaryContainer.withValues(alpha: 0.92),
-              colorScheme.secondaryContainer.withValues(alpha: 0.92),
-            ],
-          ),
+          color: colorScheme.surface,
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: colorScheme.primary.withValues(alpha: 0.18),
-              blurRadius: 18,
-              offset: const Offset(0, 10),
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
             ),
           ],
         ),
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-        child: Row(
-          children: [
-            Icon(
-              Icons.local_fire_department,
-              size: 28,
-              color: colorScheme.primary,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Calentamiento activo',
-                    style: textTheme.titleMedium?.copyWith(
-                      color: colorScheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w600,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Icono de fuego - lado izquierdo
+              Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                padding: const EdgeInsets.all(12),
+                child: Icon(
+                  Icons.local_fire_department,
+                  size: 40,
+                  color: colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 16),
+
+              // Contenido central - columna
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Título
+                    Text(
+                      'Calentamiento',
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.onSurface,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  Text(
-                    'Las puntuaciones están bloqueadas hasta finalizar el tiempo.',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onPrimaryContainer.withValues(
-                        alpha: 0.8,
+                    const SizedBox(height: 4),
+
+                    // Cronómetro
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '${(_warmupRemaining ~/ 60).toString().padLeft(2, '0')}:${(_warmupRemaining % 60).toString().padLeft(2, '0')}',
+                        style: textTheme.headlineSmall?.copyWith(
+                          color: colorScheme.primary,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
+                    const SizedBox(height: 4),
+
+                    // Advertencia de bloqueo
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.lock_outline,
+                          size: 14,
+                          color: colorScheme.error,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Puntuaciones bloqueadas',
+                          style: textTheme.labelSmall?.copyWith(
+                            color: colorScheme.error,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+
+              // Botón Cancelar - lado derecho
+              SizedBox(
+                height: 40,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.close, size: 14),
+                  label: const Text('Cancelar', style: TextStyle(fontSize: 12)),
+                  onPressed: () {
+                    setState(() {
+                      _isWarmingUp = false;
+                      _warmupTimer?.cancel();
+                    });
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: colorScheme.error,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                   ),
-                ],
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              '${(_warmupRemaining ~/ 60).toString().padLeft(2, '0')}:${(_warmupRemaining % 60).toString().padLeft(2, '0')}',
-              style: textTheme.titleLarge?.copyWith(
-                color: colorScheme.primary,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-            const SizedBox(width: 12),
-            IconButton(
-              tooltip: 'Cancelar calentamiento',
-              onPressed: () {
-                setState(() {
-                  _isWarmingUp = false;
-                  _warmupTimer?.cancel();
-                });
-              },
-              icon: Icon(Icons.close_rounded, color: colorScheme.error),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1478,78 +1514,84 @@ class _GameScreenState extends State<GameScreen>
               );
               final bottomInset = MediaQuery.of(context).padding.bottom;
 
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              return Stack(
                 children: [
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 250),
-                    child:
-                        _isWarmingUp
-                            ? _buildWarmupBanner(colorScheme, textTheme)
-                            : const SizedBox.shrink(),
-                  ),
-                  if (_isWarmingUp) const SizedBox(height: 12),
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 250),
-                    child:
-                        showMatchPoint
-                            ? _buildMatchPointBanner(colorScheme, textTheme)
-                            : const SizedBox.shrink(),
-                  ),
-                  if (showMatchPoint) const SizedBox(height: 12),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: _buildModernScoreCard(
-                              player1!,
-                              score1,
-                              true,
-                              colorScheme,
-                              scoreFontSize: cardFontSize,
-                              nameFontSize: nameFontSize,
-                              cardHeight: cardHeightHint,
-                            ),
-                          ),
-                          SizedBox(width: boardGap * 0.5),
-                          Container(
-                            width: dividerWidth,
-                            margin: EdgeInsets.symmetric(
-                              vertical: max(18.0, cardHeightHint * 0.08),
-                            ),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  colorScheme.outline.withValues(alpha: 0.0),
-                                  colorScheme.outline.withValues(alpha: 0.25),
-                                  colorScheme.outline.withValues(alpha: 0.0),
-                                ],
-                              ),
-                            ),
-                          ),
-                          SizedBox(width: boardGap * 0.5),
-                          Expanded(
-                            child: _buildModernScoreCard(
-                              player2!,
-                              score2,
-                              false,
-                              colorScheme,
-                              scoreFontSize: cardFontSize,
-                              nameFontSize: nameFontSize,
-                              cardHeight: cardHeightHint,
-                            ),
-                          ),
-                        ],
+                  // Contenido principal (tablero de puntuación)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 250),
+                        child:
+                            showMatchPoint
+                                ? _buildMatchPointBanner(colorScheme, textTheme)
+                                : const SizedBox.shrink(),
                       ),
-                    ),
+                      if (showMatchPoint) const SizedBox(height: 12),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: _buildModernScoreCard(
+                                  player1!,
+                                  score1,
+                                  true,
+                                  colorScheme,
+                                  scoreFontSize: cardFontSize,
+                                  nameFontSize: nameFontSize,
+                                  cardHeight: cardHeightHint,
+                                ),
+                              ),
+                              SizedBox(width: boardGap * 0.5),
+                              Container(
+                                width: dividerWidth,
+                                margin: EdgeInsets.symmetric(
+                                  vertical: max(18.0, cardHeightHint * 0.08),
+                                ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(14),
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      colorScheme.outline.withValues(
+                                        alpha: 0.0,
+                                      ),
+                                      colorScheme.outline.withValues(
+                                        alpha: 0.25,
+                                      ),
+                                      colorScheme.outline.withValues(
+                                        alpha: 0.0,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              SizedBox(width: boardGap * 0.5),
+                              Expanded(
+                                child: _buildModernScoreCard(
+                                  player2!,
+                                  score2,
+                                  false,
+                                  colorScheme,
+                                  scoreFontSize: cardFontSize,
+                                  nameFontSize: nameFontSize,
+                                  cardHeight: cardHeightHint,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: max(12.0, bottomInset)),
+                    ],
                   ),
-                  SizedBox(height: max(12.0, bottomInset)),
+
+                  // Dialog overlay del calentamiento (centrado y al frente)
+                  if (_isWarmingUp) _buildWarmupDialog(colorScheme, textTheme),
                 ],
               );
             },

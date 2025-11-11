@@ -449,49 +449,51 @@ class _ResultsScreenState extends State<ResultsScreen> {
             ),
         ],
       ),
-      body:
-          widget.partidas.isEmpty
-              ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.sports_tennis,
-                      size: 64,
-                      color: colorScheme.outline.withValues(alpha: 0.5),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No hay partidas guardadas',
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: colorScheme.outline,
+      body: SafeArea(
+        child:
+            widget.partidas.isEmpty
+                ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.sports_tennis,
+                        size: 64,
+                        color: colorScheme.outline.withValues(alpha: 0.5),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Juega algunas partidas para ver los resultados aquí',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: colorScheme.outline.withValues(alpha: 0.7),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No hay partidas guardadas',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: colorScheme.outline,
+                        ),
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      Text(
+                        'Juega algunas partidas para ver los resultados aquí',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: colorScheme.outline.withValues(alpha: 0.7),
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                )
+                : SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      winnerCard,
+                      const SizedBox(height: 8),
+                      rankingTable,
+                      const SizedBox(height: 8),
+                      recentMatches,
+                      const SizedBox(height: 16),
+                    ],
+                  ),
                 ),
-              )
-              : SingleChildScrollView(
-                child: Column(
-                  children: [
-                    winnerCard,
-                    const SizedBox(height: 8),
-                    rankingTable,
-                    const SizedBox(height: 8),
-                    recentMatches,
-                    const SizedBox(height: 16),
-                  ],
-                ),
-              ),
+      ),
     );
   }
 

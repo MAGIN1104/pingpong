@@ -383,20 +383,52 @@ class TournamentService {
     // Corregir problemas de estructura del torneo
     if (_currentTournament!.type == TournamentType.singleElimination) {
       _fixTournamentStructure(matches);
+    } else if (_currentTournament!.type == TournamentType.groupStage) {
+      // También corregir estructura para torneos de fase de grupos
+      _fixEliminationStructure(matches);
     }
 
     // Limpiar partidos que no se pueden completar
     if (_currentTournament!.type == TournamentType.singleElimination) {
       _cleanupInvalidMatches(matches);
+    } else if (_currentTournament!.type == TournamentType.groupStage) {
+      // Limpiar partidos duplicados de eliminación, especialmente de la final
+      _cleanupDuplicateEliminationMatches(matches);
+      _cleanupExtraFinalMatches(matches);
     }
 
     // Verificar si el torneo está completo - SOLO partidos válidos
-    final validMatches =
-        matches.where((m) => m.player1 != null && m.player2 != null).toList();
+    // Filtrar partidos válidos según el tipo de torneo
+    List<TournamentMatch> validMatches = matches;
+    if (_currentTournament!.type == TournamentType.groupStage) {
+      // Para fase de grupos, considerar solo partidos de eliminación para la verificación final
+      // Pero también verificar que la fase de grupos esté completa
+      final groupMatches = matches.where((m) => m.isGroupStage == true).toList();
+      final groupMatchesCompleted = groupMatches.every(
+        (m) => m.status == MatchStatus.completed || m.player1 == null || m.player2 == null,
+      );
+      if (!groupMatchesCompleted) {
+        print('📊 Tournament: Group stage not yet completed');
+        validMatches = groupMatches.where((m) => m.player1 != null && m.player2 != null).toList();
+      } else {
+        // Fase de grupos completa, verificar eliminación
+        // IMPORTANTE: Solo considerar partidos de eliminación que tienen ambos jugadores
+        validMatches = matches.where((m) => 
+          m.isGroupStage == false && 
+          m.player1 != null && 
+          m.player2 != null
+        ).toList();
+        
+        print('📊 Tournament: Group stage completed. Checking ${validMatches.length} elimination matches');
+      }
+    } else {
+      validMatches = matches.where((m) => m.player1 != null && m.player2 != null).toList();
+    }
 
     final allValidMatchesCompleted = validMatches.every(
       (m) => m.status == MatchStatus.completed,
     );
+    final bool finalRoundCompleted = _isFinalRoundCompleted(matches);
 
     Player? tournamentWinner;
 
@@ -406,15 +438,25 @@ class TournamentService {
     print(
       '📊 Tournament: All valid matches completed: $allValidMatchesCompleted',
     );
+    print('📊 Tournament: Final round completed: $finalRoundCompleted');
     print('📊 Tournament: Total matches: ${matches.length}');
-    for (int i = 0; i < matches.length; i++) {
-      final match = matches[i];
-      print(
-        '📊 Tournament: Match $i (Round ${match.round}): ${match.player1?.name ?? "TBD"} vs ${match.player2?.name ?? "TBD"} - Status: ${match.status} - Winner: ${match.winner?.name ?? "None"}',
-      );
+    
+    // Solo mostrar detalles de partidos en modo debug si hay problemas
+    if (!allValidMatchesCompleted || !finalRoundCompleted) {
+      for (int i = 0; i < matches.length; i++) {
+        final match = matches[i];
+        if (match.status != MatchStatus.completed || match.winner == null) {
+          print(
+            '📊 Tournament: Match $i (Round ${match.round}): ${match.player1?.name ?? "TBD"} vs ${match.player2?.name ?? "TBD"} - Status: ${match.status} - Winner: ${match.winner?.name ?? "None"}',
+          );
+        }
+      }
     }
 
-    if (allValidMatchesCompleted) {
+    // El torneo está completo solo si:
+    // 1. Todos los partidos válidos están completados
+    // 2. La ronda final está completada (tiene ganador)
+    if (finalRoundCompleted && allValidMatchesCompleted) {
       tournamentWinner = _determineTournamentWinner(validMatches);
       print('📊 Tournament: Winner determined: ${tournamentWinner?.name}');
 
@@ -436,13 +478,50 @@ class TournamentService {
           );
         }
       }
+    } else {
+      print(
+        '📊 Tournament: Not yet completed - Valid matches completed: $allValidMatchesCompleted, Final round completed: $finalRoundCompleted',
+      );
+      
+      // Debug adicional para torneos de fase de grupos
+      if (_currentTournament!.type == TournamentType.groupStage) {
+        final eliminationMatches = matches.where((m) => m.isGroupStage == false).toList();
+        if (eliminationMatches.isNotEmpty) {
+          final maxRound = eliminationMatches.map((m) => m.round).reduce((a, b) => a > b ? a : b);
+          final finalMatches = eliminationMatches.where((m) => m.round == maxRound).toList();
+          print('📊 Tournament: Final round $maxRound has ${finalMatches.length} match(es)');
+          for (final match in finalMatches) {
+            print(
+              '📊 Tournament: Final match ${match.id} - Player1: ${match.player1?.name ?? "null"}, Player2: ${match.player2?.name ?? "null"}, Status: ${match.status}, Winner: ${match.winner?.name ?? "null"}',
+            );
+          }
+        }
+      }
     }
+
+    final existingWinner = _currentTournament!.winner;
+    final existingCompletedAt = _currentTournament!.completedAt;
+
+    // Solo marcar como completado si realmente está completo
+    final isActuallyCompleted = finalRoundCompleted && 
+                                 allValidMatchesCompleted && 
+                                 tournamentWinner != null;
 
     _currentTournament = _currentTournament!.copyWith(
       matches: matches,
-      winner: tournamentWinner,
-      completedAt: allValidMatchesCompleted ? DateTime.now() : null,
+      winner: isActuallyCompleted
+          ? tournamentWinner
+          : existingWinner,
+      completedAt: isActuallyCompleted
+          ? (existingCompletedAt ?? DateTime.now())
+          : existingCompletedAt,
     );
+    
+    if (isActuallyCompleted) {
+      print('📊 Tournament: ✅ Tournament marked as COMPLETED with winner: ${tournamentWinner.name}');
+    } else {
+      print('📊 Tournament: ⏳ Tournament still in progress');
+    }
 
     await saveTournament(_currentTournament!);
     print('📊 Tournament: Saved with ${matches.length} matches');
@@ -461,6 +540,72 @@ class TournamentService {
         '📊 Tournament: Final match ${match.id} - Player1: ${match.player1?.name ?? "null"}, Player2: ${match.player2?.name ?? "null"}',
       );
     }
+  }
+
+  // Procesar partidos con bye que necesitan avanzar automáticamente
+  bool _isFinalRoundCompleted(List<TournamentMatch> matches) {
+    if (matches.isEmpty) {
+      print('📊 Tournament: No matches found');
+      return false;
+    }
+    
+    // Filtrar partidos válidos según el tipo de torneo
+    List<TournamentMatch> validMatches = matches;
+    if (_currentTournament!.type == TournamentType.groupStage) {
+      // Para fase de grupos, solo considerar partidos de eliminación
+      validMatches = matches.where((m) => m.isGroupStage == false).toList();
+    }
+    
+    if (validMatches.isEmpty) {
+      print('📊 Tournament: No valid matches found for final round check');
+      return false;
+    }
+    
+    final highestRound = validMatches.map((m) => m.round).reduce(max);
+    print('📊 Tournament: Highest round is $highestRound');
+    
+    final finals = validMatches.where((m) => m.round == highestRound).toList();
+    if (finals.isEmpty) {
+      print('📊 Tournament: No matches found in highest round');
+      return false;
+    }
+    
+    print('📊 Tournament: Found ${finals.length} match(es) in final round');
+    
+    // Si hay múltiples partidos de final, solo considerar el primero (debería haber solo 1)
+    final finalMatch = finals.length > 1 
+        ? finals.first // Si hay múltiples, usar el primero
+        : finals.isNotEmpty 
+            ? finals.first 
+            : null;
+    
+    if (finalMatch == null) {
+      print('📊 Tournament: No final match found');
+      return false;
+    }
+    
+    // Verificar que el partido de final tenga ambos jugadores
+    if (finalMatch.player1 == null || finalMatch.player2 == null) {
+      print('📊 Tournament: Final round not ready - waiting for opponents.');
+      print(
+        '📊 Tournament: Final match ${finalMatch.id} - Player1: ${finalMatch.player1?.name ?? "null"}, Player2: ${finalMatch.player2?.name ?? "null"}',
+      );
+      return false;
+    }
+    
+    // Verificar que el partido de final esté completado
+    final isCompleted = finalMatch.status == MatchStatus.completed && finalMatch.winner != null;
+    
+    if (!isCompleted) {
+      print('📊 Tournament: Final round has pending match.');
+      print(
+        '📊 Tournament: Final match ${finalMatch.id} - Status: ${finalMatch.status}, Winner: ${finalMatch.winner?.name ?? "null"}',
+      );
+    } else {
+      print('📊 Tournament: ✅ Final round is completed! Winner: ${finalMatch.winner?.name}');
+    }
+    
+    return isCompleted;
   }
 
   // Procesar partidos con bye que necesitan avanzar automáticamente
@@ -547,12 +692,23 @@ class TournamentService {
     final eliminationMatches =
         matches.where((m) => m.isGroupStage == false).toList();
 
+    if (eliminationMatches.isEmpty) {
+      print('📊 Process Elimination Byes: No elimination matches found');
+      return;
+    }
+
+    // Encontrar la ronda máxima para evitar procesar partidos después de la final
+    final maxRound = eliminationMatches.map((m) => m.round).reduce((a, b) => a > b ? a : b);
+    print('📊 Process Elimination Byes: Max round is $maxRound');
+
     for (int i = 0; i < eliminationMatches.length; i++) {
       final match = eliminationMatches[i];
       final matchIndex = matches.indexWhere((m) => m.id == match.id);
 
-      // Si el partido está completado con un ganador
-      if (match.status == MatchStatus.completed && match.winner != null) {
+      // Si el partido está completado con un ganador Y no es la final
+      if (match.status == MatchStatus.completed && 
+          match.winner != null &&
+          match.round < maxRound) { // Solo procesar si no es la final
         final nextRound = match.round + 1;
         final hasAdvanced = eliminationMatches.any(
           (m) =>
@@ -572,6 +728,10 @@ class TournamentService {
           );
           _advanceWinnerToNextRound(matches, matchIndex, match.winner!);
         }
+      } else if (match.round == maxRound && match.status == MatchStatus.completed) {
+        print(
+          '📊 Process Elimination Byes: Match ${match.id} is the final and is completed. Tournament should be complete.',
+        );
       }
     }
 
@@ -582,13 +742,26 @@ class TournamentService {
       hasChanges = false;
       iterations++;
 
-      for (int i = 0; i < eliminationMatches.length; i++) {
-        final match = eliminationMatches[i];
+      // Recalcular lista de eliminación en cada iteración
+      final currentEliminationMatches = matches.where((m) => m.isGroupStage == false).toList();
+      
+      if (currentEliminationMatches.isEmpty) {
+        break;
+      }
+
+      // Recalcular maxRound en cada iteración por si cambió
+      final currentMaxRound = currentEliminationMatches.map((m) => m.round).reduce((a, b) => a > b ? a : b);
+
+      for (int i = 0; i < currentEliminationMatches.length; i++) {
+        final match = currentEliminationMatches[i];
         final matchIndex = matches.indexWhere((m) => m.id == match.id);
 
-        if (match.status == MatchStatus.completed && match.winner != null) {
+        // Solo procesar si no es la final
+        if (match.status == MatchStatus.completed && 
+            match.winner != null &&
+            match.round < currentMaxRound) {
           final nextRound = match.round + 1;
-          final hasAdvanced = eliminationMatches.any(
+          final hasAdvanced = currentEliminationMatches.any(
             (m) =>
                 m.round == nextRound &&
                 (m.player1?.name == match.winner!.name ||
@@ -598,6 +771,7 @@ class TournamentService {
           if (!hasAdvanced) {
             _advanceWinnerToNextRound(matches, matchIndex, match.winner!);
             hasChanges = true;
+            break; // Salir del loop para recalcular en la siguiente iteración
           }
         }
       }
@@ -608,6 +782,8 @@ class TournamentService {
         '📊 Process Elimination Byes: WARNING - Reached maximum iterations, stopping processing',
       );
     }
+    
+    print('📊 Process Elimination Byes: Processing completed');
   }
 
   // Procesar partido de fase de grupos
@@ -752,6 +928,79 @@ class TournamentService {
     print(
       '📊 Elimination Generation: Generated ${matchCounter - matches.length} elimination matches total',
     );
+  }
+
+  // Limpiar partidos adicionales de la final (debe haber solo 1)
+  void _cleanupExtraFinalMatches(List<TournamentMatch> matches) {
+    print('📊 Cleanup Final: Checking for extra final matches...');
+    
+    // Solo considerar partidos de eliminación
+    final eliminationMatches = matches.where((m) => m.isGroupStage == false).toList();
+    
+    if (eliminationMatches.isEmpty) {
+      return;
+    }
+    
+    // Encontrar la ronda máxima (final)
+    final maxRound = eliminationMatches.map((m) => m.round).reduce((a, b) => a > b ? a : b);
+    final finalMatches = eliminationMatches.where((m) => m.round == maxRound).toList();
+    
+    print('📊 Cleanup Final: Found ${finalMatches.length} match(es) in final round $maxRound');
+    
+    // Solo debe haber 1 partido de final
+    if (finalMatches.length > 1) {
+      print('📊 Cleanup Final: WARNING - Found ${finalMatches.length} final matches, should be 1');
+      
+      // Ordenar por matchNumber y mantener solo el primero
+      finalMatches.sort((a, b) => a.matchNumber.compareTo(b.matchNumber));
+      
+      // Mantener el primer partido de final (el que tiene el matchNumber más bajo)
+      final matchToKeep = finalMatches.first;
+      print('📊 Cleanup Final: Keeping final match ${matchToKeep.id}');
+      
+      // Eliminar los demás partidos de final
+      for (int i = 1; i < finalMatches.length; i++) {
+        final matchToRemove = finalMatches[i];
+        print('📊 Cleanup Final: Removing duplicate final match ${matchToRemove.id}');
+        matches.removeWhere((m) => m.id == matchToRemove.id);
+      }
+    }
+    
+    // Verificar que el partido de final tenga ambos jugadores si hay semifinales completadas
+    if (finalMatches.isNotEmpty) {
+      final finalMatch = finalMatches.first;
+      if (finalMatch.player1 == null || finalMatch.player2 == null) {
+        // Buscar ganadores de semifinales que no han avanzado
+        final previousRound = maxRound - 1;
+        if (previousRound > 0) {
+          final semifinalMatches = eliminationMatches
+              .where((m) => 
+                  m.round == previousRound &&
+                  m.status == MatchStatus.completed &&
+                  m.winner != null)
+              .toList();
+          
+          print('📊 Cleanup Final: Found ${semifinalMatches.length} completed semifinal matches');
+          
+          for (final semifinal in semifinalMatches) {
+            final hasAdvanced = matches.any((m) =>
+                m.round == maxRound &&
+                (m.player1?.name == semifinal.winner!.name ||
+                    m.player2?.name == semifinal.winner!.name));
+            
+            if (!hasAdvanced) {
+              print('📊 Cleanup Final: Advancing ${semifinal.winner!.name} from semifinal to final');
+              final matchIndex = matches.indexWhere((m) => m.id == semifinal.id);
+              if (matchIndex != -1) {
+                _advanceWinnerToNextRound(matches, matchIndex, semifinal.winner!);
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    print('📊 Cleanup Final: Final cleanup completed');
   }
 
   // Limpiar partidos de eliminación duplicados
@@ -978,18 +1227,126 @@ class TournamentService {
     }
   }
 
+  // Corregir problemas de estructura de eliminación para torneos de fase de grupos
+  void _fixEliminationStructure(List<TournamentMatch> matches) {
+    print('📊 Fix Elimination Structure: Fixing elimination structure issues...');
+
+    // Procesar todos los byes de eliminación pendientes primero
+    _processEliminationByes(matches);
+
+    // Solo considerar partidos de eliminación
+    final eliminationMatches = matches.where((m) => m.isGroupStage == false).toList();
+
+    if (eliminationMatches.isEmpty) {
+      print('📊 Fix Elimination Structure: No elimination matches to fix');
+      return;
+    }
+
+    // Verificar y corregir partidos de la final
+    final maxRound = eliminationMatches.map((m) => m.round).reduce((a, b) => a > b ? a : b);
+    final finalMatches = eliminationMatches.where((m) => m.round == maxRound).toList();
+
+    print('📊 Fix Elimination Structure: Final round is $maxRound with ${finalMatches.length} match(es)');
+
+    for (final match in finalMatches) {
+      if (match.status == MatchStatus.pending &&
+          (match.player1 == null || match.player2 == null)) {
+        print(
+          '📊 Fix Elimination Structure: Found final match with missing opponent: ${match.id}',
+        );
+
+        // Buscar ganadores de la ronda anterior que no han avanzado
+        final previousRound = maxRound - 1;
+        if (previousRound > 0) {
+          final previousRoundMatches =
+              eliminationMatches
+                  .where(
+                    (m) =>
+                        m.round == previousRound &&
+                        m.status == MatchStatus.completed &&
+                        m.winner != null,
+                  )
+                  .toList();
+
+          print(
+            '📊 Fix Elimination Structure: Found ${previousRoundMatches.length} completed matches in round $previousRound',
+          );
+
+          for (final prevMatch in previousRoundMatches) {
+            final hasAdvanced = matches.any(
+              (m) =>
+                  m.round == maxRound &&
+                  (m.player1?.name == prevMatch.winner!.name ||
+                      m.player2?.name == prevMatch.winner!.name),
+            );
+
+            if (!hasAdvanced) {
+              print(
+                '📊 Fix Elimination Structure: Advancing ${prevMatch.winner!.name} to final',
+              );
+              final matchIndex = matches.indexWhere((m) => m.id == prevMatch.id);
+              if (matchIndex != -1) {
+                _advanceWinnerToNextRound(matches, matchIndex, prevMatch.winner!);
+                // Actualizar la lista después de avanzar
+                final updatedMatch = matches.firstWhere(
+                  (m) => m.id == match.id,
+                  orElse: () => match,
+                );
+                if (updatedMatch.player1 != null && updatedMatch.player2 != null) {
+                  print(
+                    '📊 Fix Elimination Structure: Final match now has both players: ${updatedMatch.player1?.name} vs ${updatedMatch.player2?.name}',
+                  );
+                  break; // Ya tenemos ambos jugadores, salir del loop
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Verificar que todos los partidos de la final tengan ambos jugadores
+    bool allFinalsReady = true;
+    for (final match in finalMatches) {
+      if (match.status == MatchStatus.pending &&
+          (match.player1 == null || match.player2 == null)) {
+        print(
+          '📊 Fix Elimination Structure: WARNING - Final match still has missing opponent after fix attempt: ${match.id}',
+        );
+        allFinalsReady = false;
+      }
+    }
+
+    if (allFinalsReady && finalMatches.isNotEmpty) {
+      print('📊 Fix Elimination Structure: ✅ All final matches are ready');
+    }
+
+    print('📊 Fix Elimination Structure: Structure fixing completed');
+  }
+
   // Corregir problemas de estructura del torneo
   void _fixTournamentStructure(List<TournamentMatch> matches) {
     print('📊 Fix Structure: Fixing tournament structure issues...');
 
-    // Procesar todos los byes pendientes
+    // Procesar todos los byes pendientes primero
     _processByeMatches(matches);
 
+    // Filtrar partidos válidos según el tipo de torneo
+    List<TournamentMatch> validMatches = matches;
+    if (_currentTournament!.type == TournamentType.groupStage) {
+      validMatches = matches.where((m) => m.isGroupStage == false).toList();
+    }
+
+    if (validMatches.isEmpty) {
+      print('📊 Fix Structure: No valid matches to fix');
+      return;
+    }
+
     // Verificar y corregir partidos de la final
-    final maxRound = matches
-        .map((m) => m.round)
-        .reduce((a, b) => a > b ? a : b);
-    final finalMatches = matches.where((m) => m.round == maxRound).toList();
+    final maxRound = validMatches.map((m) => m.round).reduce((a, b) => a > b ? a : b);
+    final finalMatches = validMatches.where((m) => m.round == maxRound).toList();
+
+    print('📊 Fix Structure: Final round is $maxRound with ${finalMatches.length} match(es)');
 
     for (final match in finalMatches) {
       if (match.status == MatchStatus.pending &&
@@ -1000,31 +1357,48 @@ class TournamentService {
 
         // Buscar ganadores de la ronda anterior que no han avanzado
         final previousRound = maxRound - 1;
-        final previousRoundMatches =
-            matches
-                .where(
-                  (m) =>
-                      m.round == previousRound &&
-                      m.status == MatchStatus.completed &&
-                      m.winner != null,
-                )
-                .toList();
+        if (previousRound > 0) {
+          final previousRoundMatches =
+              validMatches
+                  .where(
+                    (m) =>
+                        m.round == previousRound &&
+                        m.status == MatchStatus.completed &&
+                        m.winner != null,
+                  )
+                  .toList();
 
-        for (final prevMatch in previousRoundMatches) {
-          final hasAdvanced = matches.any(
-            (m) =>
-                m.round == maxRound &&
-                (m.player1?.name == prevMatch.winner!.name ||
-                    m.player2?.name == prevMatch.winner!.name),
+          print(
+            '📊 Fix Structure: Found ${previousRoundMatches.length} completed matches in round $previousRound',
           );
 
-          if (!hasAdvanced) {
-            print(
-              '📊 Fix Structure: Advancing ${prevMatch.winner!.name} to final',
+          for (final prevMatch in previousRoundMatches) {
+            final hasAdvanced = matches.any(
+              (m) =>
+                  m.round == maxRound &&
+                  (m.player1?.name == prevMatch.winner!.name ||
+                      m.player2?.name == prevMatch.winner!.name),
             );
-            final matchIndex = matches.indexWhere((m) => m.id == prevMatch.id);
-            if (matchIndex != -1) {
-              _advanceWinnerToNextRound(matches, matchIndex, prevMatch.winner!);
+
+            if (!hasAdvanced) {
+              print(
+                '📊 Fix Structure: Advancing ${prevMatch.winner!.name} to final',
+              );
+              final matchIndex = matches.indexWhere((m) => m.id == prevMatch.id);
+              if (matchIndex != -1) {
+                _advanceWinnerToNextRound(matches, matchIndex, prevMatch.winner!);
+                // Actualizar la lista después de avanzar
+                final updatedMatch = matches.firstWhere(
+                  (m) => m.id == match.id,
+                  orElse: () => match,
+                );
+                if (updatedMatch.player1 != null && updatedMatch.player2 != null) {
+                  print(
+                    '📊 Fix Structure: Final match now has both players: ${updatedMatch.player1?.name} vs ${updatedMatch.player2?.name}',
+                  );
+                  break; // Ya tenemos ambos jugadores, salir del loop
+                }
+              }
             }
           }
         }
@@ -1032,13 +1406,19 @@ class TournamentService {
     }
 
     // Verificar que todos los partidos de la final tengan ambos jugadores
+    bool allFinalsReady = true;
     for (final match in finalMatches) {
       if (match.status == MatchStatus.pending &&
           (match.player1 == null || match.player2 == null)) {
         print(
-          '📊 Fix Structure: WARNING - Final match still has missing opponent after fix attempt',
+          '📊 Fix Structure: WARNING - Final match still has missing opponent after fix attempt: ${match.id}',
         );
+        allFinalsReady = false;
       }
+    }
+
+    if (allFinalsReady && finalMatches.isNotEmpty) {
+      print('📊 Fix Structure: ✅ All final matches are ready');
     }
 
     print('📊 Fix Structure: Structure fixing completed');
@@ -1069,12 +1449,31 @@ class TournamentService {
             )
             .toList();
 
-    // Si no hay partidos en la siguiente ronda, crear uno dinámicamente
-    if (nextRoundMatches.isEmpty) {
+    // Verificar si ya existe la ronda máxima (final) para evitar crear partidos adicionales
+    List<TournamentMatch> validMatches = matches;
+    if (_currentTournament!.type == TournamentType.groupStage) {
+      validMatches = matches.where((m) => m.isGroupStage == false).toList();
+    }
+    
+    final maxRound = validMatches.isNotEmpty 
+        ? validMatches.map((m) => m.round).reduce((a, b) => a > b ? a : b)
+        : 0;
+    
+    // Si la siguiente ronda es mayor que la ronda máxima existente, no crear partidos adicionales
+    // Esto previene crear partidos después de la final
+    if (nextRound > maxRound) {
+      print(
+        '📊 Advance Winner: WARNING - Next round $nextRound exceeds max round $maxRound. Tournament should be complete. Not creating additional matches.',
+      );
+      return;
+    }
+
+    // Si no hay partidos en la siguiente ronda Y la ronda es válida, crear uno dinámicamente
+    if (nextRoundMatches.isEmpty && nextRound <= maxRound) {
       print(
         '📊 Advance Winner: No matches in round $nextRound, creating new match',
       );
-      final newMatchId = '${_currentTournament!.id}_match_${matches.length}';
+      final newMatchId = '${_currentTournament!.id}_match_${DateTime.now().millisecondsSinceEpoch}';
       final newMatch = TournamentMatch(
         id: newMatchId,
         round: nextRound,
@@ -1094,11 +1493,29 @@ class TournamentService {
       print(
         '📊 Advance Winner: Created new match $newMatchId for round $nextRound',
       );
+    } else if (nextRoundMatches.isEmpty) {
+      print(
+        '📊 Advance Winner: No matches found in round $nextRound and cannot create (max round is $maxRound)',
+      );
+      return;
     }
 
     // Calcular la posición correcta en el bracket basado en la ronda actual
-    final currentRoundMatches =
-        matches.where((m) => m.round == currentMatch.round).toList();
+    // IMPORTANTE: Ordenar los partidos de la ronda actual por matchNumber para consistencia
+    // Para torneos de fase de grupos, solo considerar partidos de eliminación
+    List<TournamentMatch> currentRoundMatchesList = matches
+        .where((m) => m.round == currentMatch.round)
+        .toList();
+    
+    if (_currentTournament!.type == TournamentType.groupStage) {
+      currentRoundMatchesList = currentRoundMatchesList
+          .where((m) => m.isGroupStage == false)
+          .toList();
+    }
+    
+    final currentRoundMatches = currentRoundMatchesList
+      ..sort((a, b) => a.matchNumber.compareTo(b.matchNumber));
+    
     final currentMatchInRound = currentRoundMatches.indexWhere(
       (m) => m.id == currentMatch.id,
     );
@@ -1110,14 +1527,40 @@ class TournamentService {
       return;
     }
 
+    // Ordenar también los partidos de la siguiente ronda por matchNumber
+    nextRoundMatches.sort((a, b) => a.matchNumber.compareTo(b.matchNumber));
+
     // Calcular qué partido de la siguiente ronda debe recibir este ganador
     // En un bracket de eliminación, cada partido de la ronda actual alimenta a un partido específico de la siguiente ronda
     final targetMatchIndex = (currentMatchInRound / 2).floor();
 
     if (targetMatchIndex >= nextRoundMatches.length) {
       print(
-        '📊 Advance Winner: ERROR - Target match index $targetMatchIndex is out of bounds for next round matches (${nextRoundMatches.length})',
+        '📊 Advance Winner: ERROR - Target match index $targetMatchIndex is out of bounds for next round matches (${nextRoundMatches.length}), using last match',
       );
+      // Si hay un error, usar el último partido disponible
+      if (nextRoundMatches.isNotEmpty) {
+        final targetMatch = nextRoundMatches.last;
+        final targetMatchIndexInAll = matches.indexWhere(
+          (m) => m.id == targetMatch.id,
+        );
+        if (targetMatchIndexInAll != -1) {
+          // Asignar al primer slot disponible
+          if (matches[targetMatchIndexInAll].player1 == null) {
+            matches[targetMatchIndexInAll] = matches[targetMatchIndexInAll]
+                .copyWith(player1: winner);
+            print(
+              '📊 Advance Winner: ${winner.name} assigned to player1 in match ${targetMatch.id} (fallback)',
+            );
+          } else if (matches[targetMatchIndexInAll].player2 == null) {
+            matches[targetMatchIndexInAll] = matches[targetMatchIndexInAll]
+                .copyWith(player2: winner);
+            print(
+              '📊 Advance Winner: ${winner.name} assigned to player2 in match ${targetMatch.id} (fallback)',
+            );
+          }
+        }
+      }
       return;
     }
 
@@ -1138,9 +1581,17 @@ class TournamentService {
           print(
             '📊 Advance Winner: ${winner.name} assigned to player1 in match ${targetMatch.id}',
           );
-        } else {
+        } else if (matches[targetMatchIndexInAll].player2 == null) {
+          // Si player1 ya está ocupado pero player2 está libre, usar player2
           print(
-            '📊 Advance Winner: WARNING - Player1 already assigned in match ${targetMatch.id}, assigning to player2',
+            '📊 Advance Winner: Player1 already assigned in match ${targetMatch.id}, assigning to player2',
+          );
+          matches[targetMatchIndexInAll] = matches[targetMatchIndexInAll]
+              .copyWith(player2: winner);
+        } else {
+          // Ambos están ocupados - esto no debería pasar, pero si pasa, reemplazar player2
+          print(
+            '📊 Advance Winner: WARNING - Both players assigned in match ${targetMatch.id}, replacing player2',
           );
           matches[targetMatchIndexInAll] = matches[targetMatchIndexInAll]
               .copyWith(player2: winner);
@@ -1153,9 +1604,17 @@ class TournamentService {
           print(
             '📊 Advance Winner: ${winner.name} assigned to player2 in match ${targetMatch.id}',
           );
-        } else {
+        } else if (matches[targetMatchIndexInAll].player1 == null) {
+          // Si player2 ya está ocupado pero player1 está libre, usar player1
           print(
-            '📊 Advance Winner: WARNING - Player2 already assigned in match ${targetMatch.id}, assigning to player1',
+            '📊 Advance Winner: Player2 already assigned in match ${targetMatch.id}, assigning to player1',
+          );
+          matches[targetMatchIndexInAll] = matches[targetMatchIndexInAll]
+              .copyWith(player1: winner);
+        } else {
+          // Ambos están ocupados - esto no debería pasar, pero si pasa, reemplazar player1
+          print(
+            '📊 Advance Winner: WARNING - Both players assigned in match ${targetMatch.id}, replacing player1',
           );
           matches[targetMatchIndexInAll] = matches[targetMatchIndexInAll]
               .copyWith(player1: winner);
@@ -1223,11 +1682,18 @@ class TournamentService {
       final winnerName = winnersWithMaxWins.first.key;
       return _currentTournament!.players.firstWhere(
         (p) => p.name == winnerName,
+        orElse: () => Player(name: winnerName),
       );
     } else {
       // En eliminación, el ganador es el del último partido completado
+      // Filtrar partidos válidos según el tipo de torneo
+      List<TournamentMatch> validMatches = matches;
+      if (_currentTournament!.type == TournamentType.groupStage) {
+        validMatches = matches.where((m) => m.isGroupStage == false).toList();
+      }
+      
       final completedMatches =
-          matches
+          validMatches
               .where(
                 (m) => m.status == MatchStatus.completed && m.winner != null,
               )
@@ -1242,18 +1708,33 @@ class TournamentService {
       }
 
       // Buscar el partido de la ronda más alta (final)
-      final finalMatch = completedMatches.reduce(
-        (a, b) => a.round > b.round ? a : b,
-      );
+      final maxRound = validMatches.map((m) => m.round).reduce(max);
+      final finalMatches = completedMatches.where((m) => m.round == maxRound).toList();
+      
+      if (finalMatches.isEmpty) {
+        print(
+          '📊 Determine Winner: No completed matches in final round ($maxRound), using highest round match',
+        );
+        // Si no hay partidos completados en la final, usar el de la ronda más alta disponible
+        final finalMatch = completedMatches.reduce(
+          (a, b) => a.round > b.round ? a : b,
+        );
+        print(
+          '📊 Determine Winner: Using match from round ${finalMatch.round}: ${finalMatch.player1?.name} vs ${finalMatch.player2?.name}, Winner: ${finalMatch.winner?.name}',
+        );
+        return finalMatch.winner;
+      }
+
+      // Si hay múltiples partidos en la final (no debería pasar), usar el primero
+      final finalMatch = finalMatches.first;
       print(
         '📊 Determine Winner: Final match: ${finalMatch.player1?.name} vs ${finalMatch.player2?.name}, Winner: ${finalMatch.winner?.name}, Round: ${finalMatch.round}',
       );
 
       // Verificar que el ganador esté en la ronda más alta posible
-      final maxRound = matches.map((m) => m.round).reduce(max);
       if (finalMatch.round == maxRound) {
         print(
-          '📊 Determine Winner: Final match is in the highest round (${finalMatch.round}) - valid winner',
+          '📊 Determine Winner: ✅ Final match is in the highest round (${finalMatch.round}) - valid winner',
         );
         return finalMatch.winner;
       } else {
@@ -1395,6 +1876,13 @@ class TournamentService {
               .toList();
 
       if (validMatches.isNotEmpty) {
+        // Ordenar por ronda (menor primero) y luego por número de partido (menor primero)
+        validMatches.sort((a, b) {
+          if (a.round != b.round) {
+            return a.round.compareTo(b.round);
+          }
+          return a.matchNumber.compareTo(b.matchNumber);
+        });
         return validMatches.first;
       }
 

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/utils/uppercase_text_formatter.dart';
+import '../../../core/services/player_color_service.dart';
 import '../../game/presentation/game_screen.dart';
 import '../../game/domain/entities/player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,6 +31,8 @@ class _SetupScreenState extends State<SetupScreen> {
   static const int _minNombreLength = 2;
   static final RegExp _nombreRegex = RegExp(r'^[A-ZÁÉÍÓÚÑÜ\s]+$');
 
+  final _colorService = PlayerColorService();
+
   @override
   void initState() {
     super.initState();
@@ -37,6 +40,7 @@ class _SetupScreenState extends State<SetupScreen> {
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
+    _colorService.init();
     _loadParticipantes();
 
     // Optimizar listener para evitar rebuilds innecesarios
@@ -252,6 +256,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 controller: editController,
                 autofocus: true,
                 maxLength: _maxNombreLength,
+                maxLengthEnforcement: MaxLengthEnforcement.enforced,
                 style: const TextStyle(fontSize: 15),
                 decoration: InputDecoration(
                   labelText: 'Nombre',
@@ -328,13 +333,16 @@ class _SetupScreenState extends State<SetupScreen> {
         return;
       }
 
-      // Actualizar el nombre
+      // Actualizar el nombre y mantener el color
+      final oldName = player.name;
       setState(() {
         final index = participantes.indexWhere((p) => p.name == player.name);
         if (index != -1) {
           participantes[index] = player.copyWith(name: newName);
         }
       });
+      // Actualizar el color asociado al nombre
+      await _colorService.updatePlayerName(oldName, newName);
       _saveParticipantes();
 
       if (mounted) {
@@ -361,37 +369,63 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   void _startQuickGame() async {
+    // Validar cantidad mínima
+    if (participantes.length < 2) {
+      _showErrorSnackBar('Se necesitan al menos 2 participantes');
+      return;
+    }
+
     // Validar que no hay participantes duplicados
     final participantNames = participantes.map((p) => p.name).toList();
-    if (participantNames.length != participantNames.toSet().length) {
+    final uniqueNames = participantNames.toSet();
+
+    if (uniqueNames.length != participantNames.length) {
       _showErrorSnackBar(
         'No se pueden tener participantes con el mismo nombre',
       );
       return;
     }
 
-    await SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    // Tomar solo los 2 primeros jugadores
+    final selectedPlayers = participantNames.take(2).toList();
 
-    if (mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder:
-              (_) => GameScreen(
-                participantes: participantNames,
-                modalidad: modalidad,
-              ),
-        ),
-      ).then((_) {
-        SystemChrome.setPreferredOrientations([
-          DeviceOrientation.portraitUp,
-          DeviceOrientation.portraitDown,
-        ]);
-      });
+    if (selectedPlayers.length < 2 ||
+        selectedPlayers[0] == selectedPlayers[1]) {
+      _showErrorSnackBar('Necesitas 2 jugadores diferentes para jugar');
+      return;
     }
+
+    // Establecer orientación landscape ANTES de navegar
+    // Hacerlo múltiples veces para asegurar
+    for (int i = 0; i < 3; i++) {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+      if (i < 2) {
+        await Future.delayed(const Duration(milliseconds: 30));
+      }
+    }
+
+    if (!mounted) return;
+
+    // Navegar con los datos validados
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (_) => GameScreen(
+              participantes: selectedPlayers,
+              modalidad: modalidad,
+            ),
+      ),
+    ).then((_) {
+      // Restaurar orientación portrait cuando salgas de GameScreen
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+    });
   }
 
   void _startTournament() async {
@@ -638,6 +672,7 @@ class _SetupScreenState extends State<SetupScreen> {
             child: TextField(
               controller: _controller,
               maxLength: _maxNombreLength,
+              maxLengthEnforcement: MaxLengthEnforcement.enforced,
               decoration: const InputDecoration(
                 labelText: 'Agregar participante',
                 hintText: 'Ej: JUAN PÉREZ',
